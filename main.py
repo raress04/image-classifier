@@ -137,7 +137,8 @@ def build_model(args, num_classes):
     elif args.model == "cnn":
         # kernel mai mare pentru alunite (features de scara mai mare)
         first_kernel = 5 if args.dataset == "moles" else 3
-        return SimpleCNN(num_classes=num_classes, first_kernel_size=first_kernel)
+        return SimpleCNN(num_classes=num_classes, first_kernel_size=first_kernel,
+                         use_batchnorm=args.batchnorm)
 
     else:
         raise ValueError(f"Model necunoscut: {args.model}")
@@ -155,6 +156,8 @@ def main():
     parser.add_argument("--batch_size", type=int,   default=64)
     parser.add_argument("--img_size",   type=int,   default=128)
     parser.add_argument("--augment",    choices=["none", "geometric", "color", "all"], default="none")
+    parser.add_argument("--batchnorm",  action="store_true",
+                        help="Activeaza BatchNorm in CNN (ablatie)")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -171,7 +174,10 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
-    run_name = f"{args.dataset}_{args.model}_aug-{args.augment}_lr{args.lr}_ep{args.epochs}"
+    run_name = (f"{args.dataset}_{args.model}"
+                f"_aug-{args.augment}"
+                f"_bn{'True' if args.batchnorm else 'False'}"
+                f"_lr{args.lr}_ep{args.epochs}")
 
     # Antrenare
     history = run_training(
@@ -186,11 +192,12 @@ def main():
     _, _, _, _, all_preds, all_labels = evaluate(model, val_loader, criterion, device)
 
     # Raport
+    os.makedirs("graphs", exist_ok=True)
     metrics = print_metrics(all_labels, all_preds, class_names)
-    plot_history(history, title=run_name, save_path=f"runs/{run_name}/history.png")
+    plot_history(history, title=run_name, save_path=f"graphs/{run_name}_history.png")
     plot_confusion_matrix(all_labels, all_preds, class_names,
                           title=f"Confusion Matrix — {run_name}",
-                          save_path=f"runs/{run_name}/confusion_matrix.png")
+                          save_path=f"graphs/{run_name}_confusion_matrix.png")
 
 
 if __name__ == "__main__":

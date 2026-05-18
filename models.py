@@ -29,39 +29,33 @@ class SimpleCNN(nn.Module):
     Arhitectura CNN comuna (max 4 conv, max 2 liniare).
     Include AdaptiveAvgPool2d pentru a fi agnostica la rezolutia intrarii.
     """
-    def __init__(self, num_classes=7, first_kernel_size=3):
+    def __init__(self, num_classes=7, first_kernel_size=3, use_batchnorm=False):
         super().__init__()
-        # Calculam padding pentru a pastra dimensiunile unde e posibil
-        pad = first_kernel_size // 2 
-        
-        self.features = nn.Sequential(
-            # Strat 1
-            nn.Conv2d(3, 32, kernel_size=first_kernel_size, padding=pad, bias=False),
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-            
-            # Strat 2
-            nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-            
-            # Strat 3
-            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-            
-            # Strat 4
-            nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-            
-            # Pool adaptiv la final
-            nn.AdaptiveAvgPool2d((1, 1))
-        )
-        
+        self.use_batchnorm = use_batchnorm
+        pad = first_kernel_size // 2
+
+        def conv_block(in_ch, out_ch, kernel=3, padding=1, pool=False):
+            """Construieste un bloc Conv -> [BN] -> ReLU -> [Pool]."""
+            layers = [
+                nn.Conv2d(in_ch, out_ch, kernel_size=kernel,
+                          padding=padding, bias=not use_batchnorm)
+            ]
+            if use_batchnorm:
+                layers.append(nn.BatchNorm2d(out_ch))
+            layers.append(nn.ReLU(inplace=True))
+            if pool:
+                layers.append(nn.MaxPool2d(2))
+            return layers
+
+        feature_layers = [
+            *conv_block(3,   32,  kernel=first_kernel_size, padding=pad, pool=True),
+            *conv_block(32,  64,  pool=True),
+            *conv_block(64,  128, pool=True),
+            *conv_block(128, 256, pool=False),
+            nn.AdaptiveAvgPool2d((1, 1)),
+        ]
+        self.features = nn.Sequential(*feature_layers)
+
         self.classifier = nn.Sequential(
             nn.Linear(256, 128),
             nn.ReLU(inplace=True),
@@ -71,5 +65,5 @@ class SimpleCNN(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        x = x.flatten(1) # aplatizare (B, 256, 1, 1) -> (B, 256)
+        x = x.flatten(1)  # (B, 256, 1, 1) -> (B, 256)
         return self.classifier(x)

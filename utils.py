@@ -24,7 +24,7 @@ def plot_history(history, title="Training", save_path=None):
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150)
-    plt.show()
+    plt.close()
 
 
 def plot_confusion_matrix(all_labels, all_preds, class_names, title="Confusion Matrix", save_path=None):
@@ -37,7 +37,7 @@ def plot_confusion_matrix(all_labels, all_preds, class_names, title="Confusion M
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150)
-    plt.show()
+    plt.close()
 
 
 def print_metrics(all_labels, all_preds, class_names):

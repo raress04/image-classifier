@@ -203,11 +203,12 @@ def main():
     )
 
     _, _, _, _, all_preds, all_labels = evaluate(model, val_loader, criterion, device)
+    os.makedirs("graphs", exist_ok=True)
     print_metrics(all_labels, all_preds, class_names)
-    plot_history(history, title=run_name, save_path=f"runs/{run_name}/history.png")
+    plot_history(history, title=run_name, save_path=f"graphs/{run_name}_history.png")
     plot_confusion_matrix(all_labels, all_preds, class_names,
                           title=f"Confusion Matrix — {run_name}",
-                          save_path=f"runs/{run_name}/confusion_matrix.png")
+                          save_path=f"graphs/{run_name}_confusion_matrix.png")
 
 
 if __name__ == "__main__":
