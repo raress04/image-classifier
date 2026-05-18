@@ -1,0 +1,16 @@
+# Dataset directories and files
+vai-de-pielea-mea/
+you-re-on-candid-camera/
+*.zip
+*.pdf
+pdf_text.txt
+
+# Python environments and cache
+.venv/
+.env/
+__pycache__/
+*.pyc
+
+# Logs and checkpoints
+runs/
+checkpoints/
