@@ -3,14 +3,17 @@ main.py — Entry point principal.
 Exemplu de utilizare:
   py main.py --dataset moles --model cnn --epochs 30 --lr 1e-3
   py main.py --dataset faces --model mlp --epochs 20 --augment geometric
+  py main.py --dataset moles --model cnn --epochs 20 --batchnorm --imbalance_strategy weighted_ce
 """
 
 import argparse
 import json
 import os
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import transforms
 
 from dataset import CSVImageDataset
@@ -28,6 +31,97 @@ MOLES_NORM = {"mean": [0.7646, 0.5464, 0.5712], "std": [0.1410, 0.1532, 0.1706]}
 
 FACES_ROOT = "you-re-on-candid-camera"
 FACES_CLASSES = ["Surprise", "Fear", "Disgust", "Happiness", "Sadness", "Anger", "Neutral"]
+
+# ---------------------------------------------------------------------------
+# FocalLoss (Sectiunea 4 din Anexa)
+# ---------------------------------------------------------------------------
+class FocalLoss(nn.Module):
+    """
+    Focal Loss = -alpha * (1 - p_t)^gamma * log(p_t)
+    Reduce ponderea exemplelor clasificate corect cu incredere mare,
+    concentrandu-se pe exemplele dificile (adesea clasele minoritare).
+    """
+    def __init__(self, alpha=None, gamma=2.0, reduction="mean"):
+        super().__init__()
+        self.alpha = alpha  # tensor [num_classes] sau None
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, logits, targets):
+        ce = F.cross_entropy(logits, targets, weight=self.alpha, reduction="none")
+        p_t = torch.exp(-ce)
+        loss = (1 - p_t) ** self.gamma * ce
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        return loss
+
+# ---------------------------------------------------------------------------
+# Calcul class weights din train set
+# ---------------------------------------------------------------------------
+def compute_class_weights(train_ds, num_classes, device):
+    """
+    Calculeaza greutatile per clasa dupa formula din Anexa:
+        w_c = N_total / (K * N_c)
+    Returneaza:
+        class_weights: tensor [num_classes] pe device
+        sample_weights: lista float cu greutatea fiecarui sample
+        class_counts: numpy array cu numarul de exemple per clasa
+    """
+    print("  Calculez distributia claselor pe train set...")
+    labels = train_ds.get_labels()
+    labels_np = np.array(labels)
+    class_counts = np.bincount(labels_np, minlength=num_classes).astype(float)
+    total = class_counts.sum()
+
+    print(f"  Total samples train: {int(total)}")
+    for i, (count, name) in enumerate(zip(class_counts, range(num_classes))):
+        pct = count / total * 100
+        print(f"    Clasa {i}: {int(count)} ({pct:.1f}%)")
+
+    # Formula: w_c = N_total / (K * N_c)
+    weights = total / (num_classes * class_counts)
+    class_weights = torch.tensor(weights, dtype=torch.float32).to(device)
+
+    # Sample weights: fiecare sample primeste greutatea clasei sale
+    sample_weights = [weights[l] for l in labels]
+
+    print(f"  Greutati per clasa: {[f'{w:.2f}' for w in weights]}")
+    return class_weights, sample_weights, class_counts
+
+# ---------------------------------------------------------------------------
+# Constructie criterion (loss function) pe baza strategiei
+# ---------------------------------------------------------------------------
+def build_criterion(strategy, class_weights, device):
+    if strategy == "none":
+        return nn.CrossEntropyLoss()
+    elif strategy == "weighted_ce":
+        return nn.CrossEntropyLoss(weight=class_weights)
+    elif strategy == "sampler":
+        # Sampler-ul echilibreaza distributia; loss-ul ramane standard
+        return nn.CrossEntropyLoss()
+    elif strategy == "focal":
+        return FocalLoss(alpha=class_weights, gamma=2.0)
+    else:
+        raise ValueError(f"Strategie necunoscuta: {strategy}")
+
+# ---------------------------------------------------------------------------
+# Constructie train loader pe baza strategiei
+# ---------------------------------------------------------------------------
+def build_train_loader(strategy, train_ds, sample_weights, batch_size, num_workers):
+    if strategy == "sampler":
+        sampler = WeightedRandomSampler(
+            weights=torch.tensor(sample_weights, dtype=torch.double),
+            num_samples=len(sample_weights),
+            replacement=True,
+        )
+        # IMPORTANT: shuffle=False cand folosim sampler
+        return DataLoader(train_ds, batch_size=batch_size, sampler=sampler,
+                          num_workers=num_workers, drop_last=True)
+    else:
+        return DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                          num_workers=num_workers, drop_last=True)
 
 # ---------------------------------------------------------------------------
 # Transformari (augmentari)
@@ -158,25 +252,42 @@ def main():
     parser.add_argument("--augment",    choices=["none", "geometric", "color", "all"], default="none")
     parser.add_argument("--batchnorm",  action="store_true",
                         help="Activeaza BatchNorm in CNN (ablatie)")
+    parser.add_argument("--imbalance_strategy",
+                        choices=["none", "weighted_ce", "sampler", "focal"],
+                        default="none",
+                        help="Strategia de tratare a dezechilibrului de clase (Sectiunea 4)")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
-    print(f"Config: dataset={args.dataset}, model={args.model}, augment={args.augment}, epochs={args.epochs}")
+    print(f"Config: dataset={args.dataset}, model={args.model}, augment={args.augment}, "
+          f"epochs={args.epochs}, imbalance={args.imbalance_strategy}")
 
     # Date
     train_ds, val_ds, class_names = load_datasets(args)
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=2, drop_last=True)
-    val_loader   = DataLoader(val_ds,   batch_size=args.batch_size, shuffle=False, num_workers=2)
+    num_classes = len(class_names)
 
-    # Model, loss, optimizer
-    model = build_model(args, num_classes=len(class_names)).to(device)
-    criterion = nn.CrossEntropyLoss()
+    # Calcul class weights (necesar pentru weighted_ce, focal, sampler)
+    class_weights, sample_weights, class_counts = compute_class_weights(
+        train_ds, num_classes, device
+    )
+
+    # Criterion si train loader depind de strategie
+    criterion   = build_criterion(args.imbalance_strategy, class_weights, device)
+    train_loader = build_train_loader(
+        args.imbalance_strategy, train_ds, sample_weights,
+        args.batch_size, num_workers=2
+    )
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=2)
+
+    # Model si optimizer
+    model = build_model(args, num_classes=num_classes).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
     run_name = (f"{args.dataset}_{args.model}"
                 f"_aug-{args.augment}"
                 f"_bn{'True' if args.batchnorm else 'False'}"
+                f"_imb-{args.imbalance_strategy}"
                 f"_lr{args.lr}_ep{args.epochs}")
 
     # Antrenare

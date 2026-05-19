@@ -1,0 +1,229 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[romanian]{babel}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{geometry}
+\geometry{a4paper, margin=2cm}
+
+\title{Tema 2 IA - Utilizarea modelelor neurale pentru clasificarea imaginilor}
+\author{Nume Prenume: [Completeaza aici]}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Arhitectura MLP}
+
+\subsection{Descrierea Arhitecturii}
+Modelul Multi-Layer Perceptron (MLP) pe care l-am implementat ia imaginile redimensionate la o rezolutie fixa de 128x128 pixeli RGB, si le aplatizeaza intr-un vector de 49.152 de trasaturi. Arhitectura e destul de simpla si arata cam asa:
+\begin{itemize}
+    \item Un prim strat liniar ascuns de 512 neuroni, urmat de BatchNormalization1d, functia de activare ReLU si Dropout cu probabilitatea de 0.3 ca sa mai reducem din overfitting.
+    \item Un al doilea strat liniar ascuns de 128 neuroni, urmat tot de BatchNormalization1d, ReLU si Dropout (0.3).
+    \item Stratul liniar de iesire cu 7 neuroni, pentru ca avem 7 clase in ambele seturi de date.
+\end{itemize}
+
+\subsection{Metoda de Antrenare}
+Am antrenat modelul folosind optimizatorul Adam. Am lasat un learning rate (lr) initial de $1e-3$ si am adaugat un weight decay de $1e-4$ pentru regularizare L2. Ca functie de loss am mers pe clasicul CrossEntropyLoss. Batch-ul a fost setat la 64 pentru ca s-a miscat bine si n-a dat out of memory.
+
+\section{Arhitectura CNN}
+
+\subsection{Descrierea Arhitecturii}
+Pentru Convolutional Neural Network (CNN) am incercat sa fac un model flexibil care sa nu depinda prea tare de rezolutia de intrare, asa ca am pus la finalul blocurilor convolutionale un strat \texttt{AdaptiveAvgPool2d((1,1))}. Arhitectura respecta cerintele din enunt:
+\begin{itemize}
+    \item \textbf{Partea convolutionala (4 straturi):}
+    \begin{itemize}
+        \item \textbf{Stratul 1:} \texttt{Conv2d} care trece imaginile de la 3 canale RGB la 32 de canale. Aici am facut o mica smecherie: pentru fete am folosit un kernel de $3\times3$, dar la alunite, pentru ca detaliile sunt la o scara mai mare in poze, am pus un kernel de $5\times5$. Dupa convolutie am bagat \texttt{BatchNorm2d}, \texttt{ReLU} si \texttt{MaxPool2d(2)}.
+        \item \textbf{Stratul 2:} \texttt{Conv2d} (de la 32 la 64 canale, kernel $3\times3$), urmat de \texttt{BatchNorm2d}, \texttt{ReLU} si \texttt{MaxPool2d(2)}.
+        \item \textbf{Stratul 3:} \texttt{Conv2d} (de la 64 la 128 canale, kernel $3\times3$), cu \texttt{BatchNorm2d}, \texttt{ReLU} si \texttt{MaxPool2d(2)}.
+        \item \textbf{Stratul 4:} ultimul \texttt{Conv2d} (de la 128 la 256 canale, kernel $3\times3$), urmat doar de \texttt{BatchNorm2d} si \texttt{ReLU}.
+        \item Cum ziceam mai devreme, la finalul extractiei de features am pus \texttt{AdaptiveAvgPool2d((1,1))}, care reduce totul la \texttt{(Batch, 256, 1, 1)}.
+    \end{itemize}
+    \item \textbf{Partea de clasificare (2 straturi liniare):}
+    \begin{itemize}
+        \item Un strat liniar ascuns (de la 256 la 128 neuroni) cu \texttt{ReLU} si un pic de Dropout (0.3).
+        \item Stratul final de iesire (de la 128 la 7 neuroni).
+    \end{itemize}
+\end{itemize}
+
+\subsection{Metoda de Antrenare}
+La fel ca la MLP, am antrenat CNN-ul cu Adam ($lr=1e-3$) si CrossEntropyLoss. 
+
+\section{Comparatie Directa Baseline (MLP vs CNN)}
+Prima data am vrut sa vad cum se descurca ambele modele pe setul de date cu alunite ("Vai de pielea mea"), in formatul lor basic: adica fara sa bag nicio augmentare si fara sa rezolv dezechilibrul claselor. 
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metrica} & \textbf{CNN Baseline} & \textbf{MLP Baseline} \\
+\midrule
+F1-macro final & 0.4228 & \textbf{0.4242} \\
+Val loss final & \textbf{0.6809} & 0.7450 \\
+Train loss final & 0.6651 & 0.6544 \\
+Acc final & \textbf{0.7444} & 0.7384 \\
+\bottomrule
+\end{tabular}
+\caption{Comparatie MLP vs CNN pe setul de alunite (baseline, fara augmentari)}
+\end{table}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.8\textwidth]{graphs/moles_cnn_aug-none_bnTrue_lr0.001_ep20_history.png}
+\caption{Grafic antrenare pentru CNN Baseline pe alunite}
+\end{figure}
+
+\textbf{Interpretare:}\\
+Sincer, a fost destul de neasteptat: pe imagini asa mici (am folosit 128x128), MLP-ul si CNN-ul au scos niste scoruri F1-macro generale cam la fel (diferenta e super mica, 0.0014). Dar cand m-am uitat la detaliile pe clase, MLP-ul s-a descurcat ceva mai bine pe clasele mai rare. De exemplu a scos un \textit{precision} de 0.46 pe melanom (\texttt{mel}) si un F1 de 0.45 pe clasa \texttt{vasc}. 
+
+In acelasi timp, ambele modele s-au chinuit rau pe clasa \texttt{df} (Dermatofibrom) unde au scos F1 fix 0.00, pentru ca pur si simplu sunt prea putine exemple. Ce mi-am dat seama de aici e ca MLP-ul chiar isi face treaba onorabil pe imagini mici, dar CNN-ul probabil abia asteapta sa adaugam augmentari si class balancing ca sa straluceasca.
+
+\section{Ablatia CNN cu si fara Batch Normalization (BatchNorm)}
+
+Dupa aia am zis sa vad cat de mult ajuta de fapt BatchNorm-ul. Am luat arhitectura de CNN si am rulat-o timp de 20 de epoci pe setul cu alunite, testand doua scenarii:
+\begin{enumerate}
+    \item \textbf{CNN Baseline (Fara BatchNorm):} Aici toate straturile convolutionale au \texttt{bias=True} si absolut nicio normalizare intre ele.
+    \item \textbf{CNN cu BatchNorm:} La fel, dar cu \texttt{bias=False} (oricum media se centreaza de la BN) si am bagat \texttt{BatchNorm2d} imediat dupa convolutie si inainte de \texttt{ReLU}.
+\end{enumerate}
+
+\subsection{Rezultate Comparative}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Configuratie CNN} & \textbf{Loss Final (Val)} & \textbf{Acuratete Finala} & \textbf{F1-Macro Final} \\
+\midrule
+Fara BatchNorm & 0.6809 & 0.7444 & 0.4228 \\
+\textbf{Cu BatchNorm} & \textbf{0.6836} & \textbf{0.7534} & \textbf{0.4624} \\
+\bottomrule
+\end{tabular}
+\caption{Comparatie performanta globala CNN cu vs fara BatchNorm}
+\end{table}
+
+\subsection{Analiza per clasa (F1-Score) cu BatchNorm}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Clasa} & \textbf{F1-Score (Fara BN)} & \textbf{F1-Score (Cu BN)} & \textbf{Support} \\
+\midrule
+akiec & 0.29 & \textbf{0.35} & 65 \\
+bcc & 0.21 & \textbf{0.52} & 103 \\
+bkl & 0.22 & \textbf{0.46} & 220 \\
+df & 0.00 & 0.00 & 23 \\
+mel & 0.00 & \textbf{0.40} & 222 \\
+nv & 0.83 & \textbf{0.88} & 1341 \\
+vasc & 0.00 & \textbf{0.63} & 29 \\
+\bottomrule
+\end{tabular}
+\caption{F1-Score pe clase pentru ablatia BatchNorm}
+\end{table}
+
+\textbf{Ce s-a intamplat de fapt:}\\
+Aici chiar s-a vazut o diferenta masiva. Dupa ce am adaugat \texttt{BatchNorm2d}, modelul a devenit mult mai stabil, iar scorul F1-macro a crescut zdravan de la \textbf{0.4228} la \textbf{0.4624}. 
+
+Fara BatchNorm, modelul se pierdea total la clasele rare (melanomul \texttt{mel} si \texttt{vasc} aveau F1 de 0.00, adica reteaua nici nu se uita la ele). Normalizarea asta pe loturi a calmat treaba cu gradientii si a obligat reteaua sa ia in seama si trasaturile din clasele mai slabe numeric. Pe clasele rare rezultatele au explodat: \texttt{mel} a ajuns la \textbf{0.40}, \texttt{bcc} s-a dublat la \textbf{0.52}, si \texttt{vasc} a ajuns la \textbf{0.63}. Din nou, \texttt{df} (care are abia 23 de imagini) a ramas la 0, dar incercam sa o scoatem la capat mai tarziu prin metodele de imbalance.
+
+\section{Ablatia CNN pe Configuratii de Augmentare a Datelor}
+
+Mai departe, am vrut sa vad ce se intampla cand aruncam niste augmentari in mix, ca sa oprim eventualul overfitting. Am rulat modelul CNN (cel bun, cu BatchNorm) inca 20 de epoci pe 4 combinatii diferite:
+\begin{itemize}
+    \item \texttt{none}: Nimic fancy, doar resize si normalizare pe poze (asta a fost Baseline-ul meu).
+    \item \texttt{geometric}: Le-am rotit aleator cu max 15 grade, le-am facut crop si un flip pe orizontala.
+    \item \texttt{color}: M-am jucat putin cu luminozitatea, contrastul si saturatia (folosind \texttt{ColorJitter}).
+    \item \texttt{all}: Le-am combinat pe cele geometrice cu cele de culoare.
+\end{itemize}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.8\textwidth]{graphs/augmentations_moles_per_class.png}
+\caption{Exemple de augmentari pe setul Moles}
+\end{figure}
+
+\subsection{Rezultate Comparative}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Configuratie Augmentare} & \textbf{Loss (Train)} & \textbf{Loss (Val)} & \textbf{F1-Macro} & \textbf{Acuratete} \\
+\midrule
+Fara augmentari (\texttt{none}) & 0.6606 & \textbf{0.6836} & \textbf{0.4624} & \textbf{0.7534} \\
+Geometric (\texttt{geometric}) & 0.6791 & 0.6948 & 0.4483 & 0.7434 \\
+Culoare (\texttt{color}) & 0.7178 & 0.7171 & 0.4430 & 0.7374 \\
+Toate (\texttt{all}) & 0.7509 & 0.7251 & 0.4233 & 0.7424 \\
+\bottomrule
+\end{tabular}
+\caption{Cum s-au comportat diferitele tipuri de augmentari (20 epoci)}
+\end{table}
+
+\textbf{Overfitting vs. Underfitting:}\\
+La prima vedere, pare ca am dat fail: odata ce am adaugat augmentari, performanta (F1-macro) a tot scazut (de la 0.46 la \texttt{none}, pana la 0.42 la \texttt{all}). Dar daca ne uitam atent pe train loss si val loss, intelegem ce se intampla. 
+
+La modelul fara augmentari (baseline), incepuse sa apara un usor overfitting (train loss scazuse mai mult decat val loss). Cand am adaugat transformarile de \texttt{color} si \texttt{all}, diferenta s-a reglat, adica regularizarea chiar a functionat. Motivul pentru care scorurile finale sunt mai slabe e de fapt \textbf{underfitting-ul}. Imaginile modificate sunt mult mai greu de inteles pentru retea, iar in alea 20 de epoci pe care i le-am dat, modelul inca nu a apucat sa proceseze bine toata varietatea asta noua. Ca sa stoarcem maximul din augmentari, ne-ar trebui antrenari mult mai lungi, probabil spre 100 de epoci.
+
+\section{Particularitati pe Setul "You're on Candid Camera" (Fete)}
+
+Ca sa nu testez totul doar pe alunite, am trecut si pe al doilea set, cel cu expresii faciale. Am rulat rapid un test de 20 de epoci fara augmentari ca sa compar MLP, CNN simplu si CNN cu BatchNorm. 
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model pe dataset "Faces"} & \textbf{F1-Macro Final} & \textbf{Acuratete Finala} \\
+\midrule
+\textbf{MLP} & \textbf{0.5224} & \textbf{0.6543} \\
+CNN (Fara BatchNorm) & 0.2432 & 0.5133 \\
+CNN (Cu BatchNorm) & 0.4180 & 0.6053 \\
+\bottomrule
+\end{tabular}
+\caption{Performanta modelelor pe setul cu expresii faciale}
+\end{table}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.8\textwidth]{graphs/faces_cnn_aug-none_bnTrue_lr0.001_ep20_history.png}
+\caption{Grafic antrenare pentru CNN (cu BN) pe Fete}
+\end{figure}
+
+\subsection{Interpretare}
+Am observat un lucru foarte interesant: pe fete, daca nu aplici nicio tehnica suplimentara (fara augmentari, fara class weighting), MLP-ul o duce efectiv mai bine decat CNN-ul (F1 de 0.52 fata de 0.41). De ce? Pentru ca MLP-ul are un Dropout destul de puternic de 0.3 care il regularizeaza frumos din start. 
+
+CNN-ul, in schimb, e o retea mai "lacoma" dupa capacitate si tinde sa dea overfit rapid daca nu ii dam augmentari. Iar la fel ca la alunite, CNN-ul fara BatchNorm pur si simplu pica, gradientii o iau razna, iar modelul alege sa clasifice totul in clasa cu cele mai multe fete (Happiness). Deci, MLP-ul castiga runda asta doar pentru ca e un model mai batos, nu pentru ca e mai potrivit pentru poze.
+
+\subsection{Ablatia Augmentarilor pe CNN (cu BatchNorm) la Fete}
+
+Ca sa testez teoria ca CNN-ului ii trebuie doar mai mult timp cand adaugam augmentari, am reluat procesul de la alunite pe cele 4 tipuri de transformari:
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.8\textwidth]{graphs/augmentations_faces_per_class.png}
+\caption{Exemple de augmentari pe setul Faces}
+\end{figure}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Configuratie} & \textbf{F1-Macro} & \textbf{Acuratete} \\
+\midrule
+Fara augmentari (\texttt{none}) & \textbf{0.4180} & \textbf{0.6053} \\
+Geometric (\texttt{geometric}) & 0.2466 & 0.3195 \\
+Culoare (\texttt{color}) & 0.3252 & 0.5580 \\
+Toate (\texttt{all}) & 0.3276 & 0.3990 \\
+\bottomrule
+\end{tabular}
+\caption{Rezultate augmentari pe expresii faciale}
+\end{table}
+
+\textbf{Ce putem trage de aici:}\\
+Aici se vede din nou underfitting-ul pentru ca 20 de epoci sunt pur si simplu prea putine ca sa invete un model cu asa mult 'zgomot' nou. Dar mai important e altceva: augmentarile geometrice i-au dat damage masiv (acuratetea a picat la jumatate, la 31\%). Asta s-a intamplat pentru ca in setul \textit{Candid Camera}, fetele sunt deja centrate manual (aliniate facial). Cand am pus \textit{RandomCrop} si rotatii, am stricat practic alinierea asta perfecta, iar CNN-ul a fost nevoit sa reinvete de la zero sa gaseasca fetele in poze, inainte sa recunoasca emotiile. 
+
+Pe partea cealalta, modificarile de culoare (\texttt{color}) au lasat modelul sa "respire" la o acuratete decenta de 55\%, fiindca nu i-au mutat pixelii cheie din loc. Ideea de final: cand lucrezi cu date pre-aliniate (cum sunt in general fetele), nu baga augmentari geometrice agresive daca nu esti pregatit sa antrenezi o saptamana intreaga!
+
+\end{document}

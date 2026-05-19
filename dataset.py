@@ -58,3 +58,17 @@ class CSVImageDataset(Dataset):
             label = int(label) - 1
 
         return image, label
+
+    def get_labels(self):
+        """Returneaza toate etichetele din dataset fara a incarca imaginile.
+        Util pentru calculul class weights / sampler weights.
+        """
+        labels = []
+        for _, row in self.data_frame.iterrows():
+            label = row[self.label_col]
+            if self.label_mapping is not None:
+                label = self.label_mapping[label]
+            else:
+                label = int(label) - 1
+            labels.append(int(label))
+        return labels
