@@ -226,4 +226,67 @@ Aici se vede din nou underfitting-ul pentru ca 20 de epoci sunt pur si simplu pr
 
 Pe partea cealalta, modificarile de culoare (\texttt{color}) au lasat modelul sa "respire" la o acuratete decenta de 55\%, fiindca nu i-au mutat pixelii cheie din loc. Ideea de final: cand lucrezi cu date pre-aliniate (cum sunt in general fetele), nu baga augmentari geometrice agresive daca nu esti pregatit sa antrenezi o saptamana intreaga!
 
+\section{Tratarea Dezechilibrului de Clase (Ablatii)}
+
+In acest experiment, am vrut sa scapam de marea problema a ambelor seturi: faptul ca modelul tinde sa ignore complet clasele minoritare pentru ca e mult mai usor sa dea predictii doar pe clasa majoritara (cum e \texttt{nv} la alunite sau \texttt{Happiness} la fete). 
+
+Am testat trei strategii de echilibrare pe aceeasi configuratie de baza (CNN cu BatchNorm, fara augmentari, 20 de epoci):
+\begin{itemize}
+    \item \texttt{none}: Baseline-ul simplu (fara ajustari).
+    \item \texttt{weighted\_ce}: Ponderarea functiei de loss conform formulei din enunt: $w_c = \frac{N_{total}}{K \cdot N_c}$. Asta inseamna ca penalizam mult mai dur greselile pe clasele rare.
+    \item \texttt{sampler}: Utilizarea unui \texttt{WeightedRandomSampler} la nivel de DataLoader, determinand reteaua sa primeasca mai des in batch-uri imagini din clasele rare (oversampling din zbor).
+    \item \texttt{focal}: Folosirea Focal Loss pentru a forta modelul sa ignore mostrele usoare (cum e clasa majoritara) si sa se concentreze pe cele grele.
+\end{itemize}
+
+\subsection{Rezultate pe Setul de Alunite (Moles)}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Strategie} & \textbf{F1-Macro} & \textbf{Acuratete} & \textbf{Recall df} & \textbf{Recall mel} & \textbf{Recall vasc} \\
+\midrule
+Baseline (\texttt{none}) & 0.4624 & \textbf{0.7534} & 0.00 & 0.00 & 0.00 \\
+Weighted CE & 0.4194 & 0.5731 & 0.17 & \textbf{0.69} & \textbf{0.90} \\
+\textbf{Weighted Sampler} & \textbf{0.4975} & 0.6430 & \textbf{0.48} & 0.52 & 0.86 \\
+Focal Loss & 0.3418 & 0.4319 & 0.35 & 0.56 & 0.76 \\
+\bottomrule
+\end{tabular}
+\caption{Ablatie imbalance pe setul Moles}
+\end{table}
+
+\textbf{Ce am observat pe Alunite:}\\
+Aici rezultatele au fost super clare si interesante:
+\begin{itemize}
+    \item \texttt{WeightedRandomSampler} a fost clar campionul. A ridicat scorul F1-macro global la un remarcabil \textbf{0.4975} (fata de 0.4624 pe baseline). Cel mai tare e ca a reusit sa aduca la viata clasa extrem de rara \texttt{df} (Dermatofibrom, doar 23 de imagini), care inainte era complet moarta (F1=0.00). Cu sampler, recall-ul pe \texttt{df} a sarit la \textbf{0.48} (F1=0.20), iar acuratetea a ramas la un nivel bun de 64\%.
+    \item \texttt{Weighted CrossEntropy} a ajutat si ea masiv clasele rare, impingand recall-ul pe melanom (\texttt{mel}) la \textbf{0.69} si pe leziuni vasculare (\texttt{vasc}) la un urias \textbf{0.90}. Totusi, pretul platit a fost o scadere destul de mare a acuratetii globale (la 57\%), deoarece modelul a inceput sa creada prea des ca alunițele comune (\texttt{nv}) sunt de fapt alte chestii.
+    \item \texttt{Focal Loss} a mers destul de slab in cele 20 de epoci. Reteaua a invatat extrem de greu, acuratetea prabusindu-se la 43\%. Se pare ca Focal are nevoie de mult mai multe epoci sau de un tuning fin al hiperparametrului $\gamma$ ca sa functioneze bine.
+\end{itemize}
+
+\subsection{Rezultate pe Setul de Expresii Faciale (Faces)}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Strategie} & \textbf{F1-Macro} & \textbf{Acuratete} & \textbf{Recall Fear} & \textbf{Recall Disgust} & \textbf{Recall Anger} \\
+\midrule
+Baseline (\texttt{none}) & \textbf{0.4180} & \textbf{0.6053} & 0.00 & 0.01 & 0.12 \\
+Weighted CE & 0.3782 & 0.4605 & 0.26 & 0.11 & \textbf{0.11} \\
+Weighted Sampler & 0.3320 & 0.4883 & \textbf{0.79} & 0.07 & 0.09 \\
+Focal Loss & 0.1909 & 0.2123 & 0.07 & \textbf{0.51} & 0.32 \\
+\bottomrule
+\end{tabular}
+\caption{Ablatie imbalance pe setul Faces}
+\end{table}
+
+\textbf{Ce am observat pe Fete:}\\
+Pe setul de expresii faciale, situatia a fost diferita si ne arata cat de sensibile sunt fetele la schimbarea distributiei:
+\begin{itemize}
+    \item Nicio strategie de balansare nu a depasit F1-macro-ul baseline-ului (\textbf{0.4180}), dar acest scor mare de baseline era din nou "fals", deoarece recall-ul pe clasele critice precum \texttt{Fear} (0.00) sau \texttt{Disgust} (0.01) era practic zero.
+    \item \texttt{Weighted CE} a fost cea mai stabila metoda de corectie: a adus recall-ul la \texttt{Fear} la \textbf{0.26} si la \texttt{Disgust} la \textbf{0.11}, mentinand un F1-macro decent de 0.37.
+    \item \texttt{WeightedRandomSampler} a facut o chestie extrema: a fortat modelul sa recunoasca frica (\texttt{Fear} recall a sarit direct la \textbf{0.79}!), dar a stricat complet predictiile pe restul claselor, mai ales pe clasa majoritara de fericire (\texttt{Happiness}).
+    \item \texttt{Focal Loss} a colapsat complet pe fete (acuratete de doar 21\% si F1-macro de 0.19). Asta ne confirma ca pentru setul Faces (care este mult mai complex decat cel cu alunite), aplicarea Focal Loss fara un antrenament de lunga durata sau optimizator bine reglat blocheaza complet procesul de invatare.
+\end{itemize}
+
 \end{document}
