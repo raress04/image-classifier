@@ -51,10 +51,10 @@ class CSVImageDataset(Dataset):
         label = self.data_frame.iloc[idx][self.label_col]
         
         # Daca avem un mapping explicit (cum e la alunite unde avem string-uri)
-        if self.label_mapping is not None and label in self.label_mapping:
+        if self.label_mapping is not None:
             label = self.label_mapping[label]
-        elif isinstance(label, str) and label.isdigit():
-            # Pentru dataset-ul de fete etichetele sunt '1', '2' etc. (le facem 0-indexate)
+        else:
+            # Fete: etichetele sunt 1-7 (numpy.int64 sau str) -> facem 0-indexate
             label = int(label) - 1
 
         return image, label
