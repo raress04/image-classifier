@@ -23,18 +23,29 @@ class CSVImageDataset(Dataset):
         self.is_test = is_test
         self.label_mapping = label_mapping
         
-        # Determinam coloana de imagini (pentru alunite e 'imagine', pentru fete e 'path')
-        self.img_col = 'imagine' if 'imagine' in self.data_frame.columns else 'path'
+        # Determinam coloana de imagini (pentru alunite e 'imagine', pentru fete e 'path' sau 'id')
+        if 'imagine' in self.data_frame.columns:
+            self.img_col = 'imagine'
+        elif 'path' in self.data_frame.columns:
+            self.img_col = 'path'
+        elif 'id' in self.data_frame.columns:
+            self.img_col = 'id'
+        else:
+            raise KeyError("Nu s-a putut determina coloana cu caile/numele imaginilor.")
+            
+        self.img_names = self.data_frame[self.img_col].astype(str).tolist()
+
         
         if not self.is_test:
             self.label_col = 'diagnostic' if 'diagnostic' in self.data_frame.columns else 'label'
+            self.labels = self.data_frame[self.label_col].tolist()
 
     def __len__(self):
-        return len(self.data_frame)
+        return len(self.img_names)
 
     def __getitem__(self, idx):
         # Numele sau calea relativa a imaginii
-        img_name = str(self.data_frame.iloc[idx][self.img_col])
+        img_name = self.img_names[idx]
         img_path = os.path.join(self.img_dir, img_name)
         
         # Incarcam si fortam sa fie RGB
@@ -48,7 +59,7 @@ class CSVImageDataset(Dataset):
             return image, img_name
             
         # Extragem eticheta
-        label = self.data_frame.iloc[idx][self.label_col]
+        label = self.labels[idx]
         
         # Daca avem un mapping explicit (cum e la alunite unde avem string-uri)
         if self.label_mapping is not None:
@@ -63,12 +74,14 @@ class CSVImageDataset(Dataset):
         """Returneaza toate etichetele din dataset fara a incarca imaginile.
         Util pentru calculul class weights / sampler weights.
         """
+        if self.is_test:
+            return []
         labels = []
-        for _, row in self.data_frame.iterrows():
-            label = row[self.label_col]
+        for label in self.labels:
             if self.label_mapping is not None:
                 label = self.label_mapping[label]
             else:
                 label = int(label) - 1
             labels.append(int(label))
         return labels
+

@@ -6,18 +6,18 @@ class SimpleMLP(nn.Module):
     Arhitectura MLP pentru clasificare.
     Presupunem o intrare redimensionata (ex. 128x128x3).
     """
-    def __init__(self, num_classes=7, input_size=128*128*3):
+    def __init__(self, num_classes=7, input_size=128*128*3, dropout_prob: float = 0.3):
         super().__init__()
         self.net = nn.Sequential(
             nn.Flatten(),
             nn.Linear(input_size, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
+            nn.Dropout(dropout_prob),
             nn.Linear(512, 128),
             nn.BatchNorm1d(128),
             nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
+            nn.Dropout(dropout_prob),
             nn.Linear(128, num_classes)
         )
 

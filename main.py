@@ -15,11 +15,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import transforms
+import torchvision.models as tv_models
 
 from dataset import CSVImageDataset
 from models import SimpleMLP, SimpleCNN
 from train import run_training, evaluate
 from utils import plot_history, plot_confusion_matrix, print_metrics
+
+# Statistici ImageNet (obligatorii pentru modelele pre-antrenate)
+IMAGENET_NORM = {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
 
 # ---------------------------------------------------------------------------
 # Configuratii per dataset
@@ -177,8 +181,11 @@ def build_transforms(augment, norm_mean, norm_std, img_size=128):
 # Incarcare date
 # ---------------------------------------------------------------------------
 def load_datasets(args):
+    is_pretrained = args.model in ("resnet18", "mobilenetv2")
+
     if args.dataset == "moles":
-        norm = MOLES_NORM
+        # Modelele pretrained cer normalizare ImageNet; celelalte folosesc statistici locale
+        norm = IMAGENET_NORM if is_pretrained else MOLES_NORM
         train_tf, val_tf = build_transforms(args.augment, norm["mean"], norm["std"], args.img_size)
 
         train_ds = CSVImageDataset(
@@ -196,11 +203,16 @@ def load_datasets(args):
         class_names = MOLES_CLASSES
 
     elif args.dataset == "faces":
-        stats_path = os.path.join(FACES_ROOT, "splits", "norm_stats.json")
-        with open(stats_path) as f:
-            stats = json.load(f)
-        norm_mean = stats["mean"]
-        norm_std = stats["std"]
+        if is_pretrained:
+            norm_mean = IMAGENET_NORM["mean"]
+            norm_std  = IMAGENET_NORM["std"]
+        else:
+            stats_path = os.path.join(FACES_ROOT, "splits", "norm_stats.json")
+            with open(stats_path) as f:
+                stats = json.load(f)
+            norm_mean = stats["mean"]
+            norm_std  = stats["std"]
+
         train_tf, val_tf = build_transforms(args.augment, norm_mean, norm_std, args.img_size)
 
         train_ds = CSVImageDataset(
@@ -226,13 +238,75 @@ def load_datasets(args):
 def build_model(args, num_classes):
     if args.model == "mlp":
         input_size = args.img_size * args.img_size * 3
-        return SimpleMLP(num_classes=num_classes, input_size=input_size)
+        return SimpleMLP(num_classes=num_classes, input_size=input_size, dropout_prob=args.dropout_prob)
 
     elif args.model == "cnn":
-        # kernel mai mare pentru alunite (features de scara mai mare)
         first_kernel = 5 if args.dataset == "moles" else 3
         return SimpleCNN(num_classes=num_classes, first_kernel_size=first_kernel,
                          use_batchnorm=args.batchnorm)
+
+    elif args.model == "resnet18":
+        model = tv_models.resnet18(weights=tv_models.ResNet18_Weights.IMAGENET1K_V1)
+        # Inghetam complet backbone-ul mai intai
+        for param in model.parameters():
+            param.requires_grad = False
+        
+        # Dezghetam selectiv ultimele N blocuri convolutionale
+        # 0 = complet inghetat
+        # 1 = layer4
+        # 2 = layer3 + layer4
+        # 3 = layer2 + layer3 + layer4
+        # 4 = dezghetat complet (layer1 + layer2 + layer3 + layer4)
+        if args.unfreeze_blocks >= 4:
+            # Dezghetat complet: toate parametrii backbone-ului
+            for name, param in model.named_parameters():
+                if not name.startswith("fc"):
+                    param.requires_grad = True
+        else:
+            blocks_to_unfreeze = []
+            if args.unfreeze_blocks >= 1:
+                blocks_to_unfreeze.append(model.layer4)
+            if args.unfreeze_blocks >= 2:
+                blocks_to_unfreeze.append(model.layer3)
+            if args.unfreeze_blocks >= 3:
+                blocks_to_unfreeze.append(model.layer2)
+            for block in blocks_to_unfreeze:
+                for param in block.parameters():
+                    param.requires_grad = True
+        
+        # Inlocuim capul de clasificare cu unul adaptat la num_classes
+        in_features = model.fc.in_features
+        if getattr(args, 'complex_head', False):
+            # Cap MLP mai adanc: Linear -> BN -> ReLU -> Dropout -> Linear
+            model.fc = nn.Sequential(
+                nn.Linear(in_features, 256),
+                nn.BatchNorm1d(256),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.3),
+                nn.Linear(256, num_classes)
+            )
+            print(f"  ResNet-18: cap COMPLEX (512->256->BN->ReLU->Dropout->{num_classes})")
+        else:
+            model.fc = nn.Linear(in_features, num_classes)  # requires_grad=True implicit
+            print(f"  ResNet-18: cap SIMPLU ({in_features}->{num_classes})")
+
+        if args.unfreeze_blocks == 0:
+            frozen_info = "frozen"
+        elif args.unfreeze_blocks >= 4:
+            frozen_info = "fully_unfrozen"
+        else:
+            frozen_info = f"unfreeze_last{args.unfreeze_blocks}blocks"
+        print(f"  ResNet-18 pretrained: {frozen_info}")
+        return model
+
+    elif args.model == "mobilenetv2":
+        model = tv_models.mobilenet_v2(weights=tv_models.MobileNet_V2_Weights.IMAGENET1K_V1)
+        for param in model.parameters():
+            param.requires_grad = False
+        in_features = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(in_features, num_classes)
+        print(f"  MobileNet-v2 pretrained: backbone inghetat, cap nou cu {in_features} -> {num_classes}")
+        return model
 
     else:
         raise ValueError(f"Model necunoscut: {args.model}")
@@ -244,18 +318,33 @@ def build_model(args, num_classes):
 def main():
     parser = argparse.ArgumentParser(description="Tema 2 IA — Clasificare imagini cu PyTorch")
     parser.add_argument("--dataset",    choices=["moles", "faces"], required=True)
-    parser.add_argument("--model",      choices=["mlp", "cnn"],     required=True)
+    parser.add_argument("--model",      choices=["mlp", "cnn", "resnet18", "mobilenetv2"], required=True)
     parser.add_argument("--epochs",     type=int,   default=30)
-    parser.add_argument("--lr",         type=float, default=1e-3)
+    parser.add_argument("--lr",         type=float, default=1e-3,
+                        help="LR global (folosit daca --lr_backbone/--lr_head nu sunt specificate)")
+    parser.add_argument("--lr_backbone", type=float, default=None,
+                        help="LR pentru backbone dezghetat (default: lr * 0.1). Suprascrieaza --lr pe backbone.")
+    parser.add_argument("--lr_head",     type=float, default=None,
+                        help="LR pentru capul de clasificare (default: --lr). Suprascrieaza --lr pe head.")
     parser.add_argument("--batch_size", type=int,   default=64)
     parser.add_argument("--img_size",   type=int,   default=128)
     parser.add_argument("--augment",    choices=["none", "geometric", "color", "all"], default="none")
+    parser.add_argument("--dropout_prob", type=float, default=0.3,
+                        help="Probabilitatea de dropout pentru MLP (0.0 = fara dropout)")
     parser.add_argument("--batchnorm",  action="store_true",
                         help="Activeaza BatchNorm in CNN (ablatie)")
+    parser.add_argument("--complex_head", action="store_true",
+                        help="Inlocuieste capul linear simplu cu un MLP (512->256->BN->ReLU->Dropout->7)")
     parser.add_argument("--imbalance_strategy",
                         choices=["none", "weighted_ce", "sampler", "focal"],
                         default="none",
                         help="Strategia de tratare a dezechilibrului de clase (Sectiunea 4)")
+    parser.add_argument("--warmup",     action="store_true",
+                        help="[DEPRECATED] Foloseste --scheduler warmup_cosine in loc. Pastrat pentru compatibilitate.")
+    parser.add_argument("--scheduler",  choices=["none", "cosine", "warmup_cosine"], default="none",
+                        help="Tipul de LR scheduler: none (constant), cosine (CosineAnnealing), warmup_cosine (3ep warmup + cosine)")
+    parser.add_argument("--unfreeze_blocks", type=int, default=0,
+                        help="Numarul de blocuri ResNet finale de dezghetat (0=complet inghetat, 4=complet dezghetat)")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -282,13 +371,71 @@ def main():
 
     # Model si optimizer
     model = build_model(args, num_classes=num_classes).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
-    run_name = (f"{args.dataset}_{args.model}"
-                f"_aug-{args.augment}"
-                f"_bn{'True' if args.batchnorm else 'False'}"
-                f"_imb-{args.imbalance_strategy}"
-                f"_lr{args.lr}_ep{args.epochs}")
+    # Optimizer cu learning rate diferentiat cand backbone e partial/complet dezghetat
+    is_pretrained_model = args.model in ("resnet18", "mobilenetv2")
+    lr_backbone = getattr(args, 'lr_backbone', None)
+    lr_head     = getattr(args, 'lr_head',     None)
+
+    if is_pretrained_model and args.unfreeze_blocks > 0:
+        # LR explicit daca e furnizat, altfel fallback la lr*0.1 (backward compat)
+        _lr_bb   = lr_backbone if lr_backbone is not None else args.lr * 0.1
+        _lr_head = lr_head     if lr_head     is not None else args.lr
+
+        # head = model.fc (poate fi nn.Sequential sau nn.Linear)
+        head_params = list(model.fc.parameters())
+        head_ids    = {id(p) for p in head_params}
+        backbone_params = [p for p in model.parameters()
+                           if p.requires_grad and id(p) not in head_ids]
+        optimizer = torch.optim.Adam([
+            {"params": backbone_params, "lr": _lr_bb},
+            {"params": head_params,     "lr": _lr_head},
+        ], weight_decay=1e-4)
+        print(f"  Optimizer diferentiat: backbone_lr={_lr_bb:.2e}, head_lr={_lr_head:.2e}")
+    else:
+        _lr = lr_head if lr_head is not None else args.lr
+        trainable_params = filter(lambda p: p.requires_grad, model.parameters())
+        optimizer = torch.optim.Adam(trainable_params, lr=_lr, weight_decay=1e-4)
+
+    # Scheduler
+    scheduler_type = getattr(args, 'scheduler', 'none')
+    # backward compat: --warmup vechi => warmup_cosine
+    if getattr(args, 'warmup', False) and scheduler_type == 'none':
+        scheduler_type = 'warmup_cosine'
+
+    scheduler = None
+    if scheduler_type == 'cosine':
+        from torch.optim.lr_scheduler import CosineAnnealingLR
+        scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
+        print(f"  Scheduler: CosineAnnealingLR (T_max={args.epochs})")
+    elif scheduler_type == 'warmup_cosine':
+        from torch.optim.lr_scheduler import LambdaLR, CosineAnnealingLR, SequentialLR
+        warmup_epochs = 3
+        warmup  = LambdaLR(optimizer, lr_lambda=lambda e: (e + 1) / warmup_epochs)
+        cosine  = CosineAnnealingLR(optimizer, T_max=max(args.epochs - warmup_epochs, 1), eta_min=1e-6)
+        scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs])
+        print(f"  Scheduler: warmup({warmup_epochs}ep) + CosineAnnealingLR")
+    else:
+        print("  Scheduler: none (LR constant)")
+
+    is_pretrained = args.model in ("resnet18", "mobilenetv2")
+    # Determinam sufixul scheduler pentru run_name
+    _sched_tag = getattr(args, 'scheduler', 'none')
+    if getattr(args, 'warmup', False) and _sched_tag == 'none':
+        _sched_tag = 'warmup_cosine'
+    _head_tag = '_complexhead' if getattr(args, 'complex_head', False) else ''
+    _lr_tag   = f"bb{_lr_bb:.0e}" if (is_pretrained_model and args.unfreeze_blocks > 0) else f"lr{args.lr}"
+    run_name = f"{args.dataset}_{args.model}" + (
+        f"_dp{args.dropout_prob}" if args.model == "mlp" else ""
+    ) + (
+        f"_aug-{args.augment}"
+        f"_bn{'True' if args.batchnorm else 'False'}"
+        f"_imb-{args.imbalance_strategy}"
+    ) + (
+        f"_sched-{_sched_tag}" if is_pretrained else ""
+    ) + (
+        f"_ub{args.unfreeze_blocks}" if is_pretrained and args.unfreeze_blocks > 0 else ""
+    ) + _head_tag + f"_{_lr_tag}_ep{args.epochs}"
 
     # Antrenare
     history = run_training(
@@ -297,6 +444,7 @@ def main():
         num_epochs=args.epochs,
         device=device,
         run_name=run_name,
+        scheduler=scheduler,
     )
 
     # Evaluare finala

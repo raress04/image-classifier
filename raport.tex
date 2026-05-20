@@ -26,8 +26,40 @@ Modelul Multi-Layer Perceptron (MLP) pe care l-am implementat ia imaginile redim
     \item Stratul liniar de iesire cu 7 neuroni, pentru ca avem 7 clase in ambele seturi de date.
 \end{itemize}
 
-\subsection{Metoda de Antrenare}
 Am antrenat modelul folosind optimizatorul Adam. Am lasat un learning rate (lr) initial de $1e-3$ si am adaugat un weight decay de $1e-4$ pentru regularizare L2. Ca functie de loss am mers pe clasicul CrossEntropyLoss. Batch-ul a fost setat la 64 pentru ca s-a miscat bine si n-a dat out of memory.
+
+\subsection{Ablatia MLP: Cu vs. Fara Dropout}
+
+Pentru a demonstra utilitatea regularizarii intr-o retea densa, am antrenat modelul MLP timp de 20 de epoci in doua scenarii: cu parametrul de dropout la 0.3 (configuratia noastra standard) si cu dropout setat la 0.0 (fara nicio regularizare).
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{llccc}
+\toprule
+\textbf{Dataset} & \textbf{Configuratie} & \textbf{Train Acc (Ep. 20)} & \textbf{Val Acc (Ep. 20)} & \textbf{Decalaj (Gap)} \\
+\midrule
+Moles & Dropout = 0.3 & 75.3\% & \textbf{73.3\%} & $\sim$2.0\% \\
+Moles & Dropout = 0.0 & \textbf{82.4\%} & 71.8\% & \textbf{$\sim$10.6\%} \\
+\midrule
+Faces & Dropout = 0.3 & 68.4\% & \textbf{66.2\%} & $\sim$2.2\% \\
+Faces & Dropout = 0.0 & \textbf{78.8\%} & 65.3\% & \textbf{$\sim$13.5\%} \\
+\bottomrule
+\end{tabular}
+\caption{Ablatie Dropout pe Arhitectura MLP}
+\end{table}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/mlp_ablation/moles_dropout_ablation.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/mlp_ablation/faces_dropout_ablation.png}
+\caption{Comparatie Train vs Validation Loss (Dropout 0.3 vs 0.0) pe ambele seturi de date}
+\end{figure}
+
+\textbf{Ce am invatat din aceste date:}\\
+Rezultatele demonstreaza perfect fenomenul de \textbf{overfitting (supra-invatare)}. In scenariul in care am eliminat Dropout-ul (\texttt{dp=0.0}), modelul are capacitate maxima la fiecare pas si incepe sa memoreze datele de antrenare: acuratetea de train explodeaza spre 80\%+, insa pe setul de validare performanta stagneaza sau chiar scade. Decalajul (gap-ul) ajunge sa fie masiv, de peste 10-13 procente.
+
+In schimb, mentinerea Dropout-ului la \texttt{0.3} tine reteaua in frau. Fortand neuronii sa nu se bazeze unii pe altii, invatarea este mai lenta si mai conservatoare (train acc se plafoneaza mai jos), dar reteaua generalizeaza vizibil mai bine: acuratetea pe validare a fost superioara pe ambele seturi de date, iar decalajul dintre train si validare a ramas sanatos, in jur de 2\%. Astfel, demonstratia ne arata clar ca un MLP fara regularizare este inutilizabil pe date complexe.
 
 \section{Arhitectura CNN}
 
@@ -72,7 +104,7 @@ Acc final & \textbf{0.7444} & 0.7384 \\
 
 \begin{figure}[h!]
 \centering
-\includegraphics[width=0.8\textwidth]{graphs/moles_cnn_aug-none_bnTrue_lr0.001_ep20_history.png}
+\includegraphics[width=0.8\textwidth]{graphs/cnn_baseline/moles_history.png}
 \caption{Grafic antrenare pentru CNN Baseline pe alunite}
 \end{figure}
 
@@ -141,7 +173,7 @@ Mai departe, am vrut sa vad ce se intampla cand aruncam niste augmentari in mix,
 
 \begin{figure}[h!]
 \centering
-\includegraphics[width=0.8\textwidth]{graphs/augmentations_moles_per_class.png}
+\includegraphics[width=0.8\textwidth]{graphs/aug_ablation/moles_demo.png}
 \caption{Exemple de augmentari pe setul Moles}
 \end{figure}
 
@@ -187,7 +219,7 @@ CNN (Cu BatchNorm) & 0.4180 & 0.6053 \\
 
 \begin{figure}[h!]
 \centering
-\includegraphics[width=0.8\textwidth]{graphs/faces_cnn_aug-none_bnTrue_lr0.001_ep20_history.png}
+\includegraphics[width=0.8\textwidth]{graphs/cnn_baseline/faces_history.png}
 \caption{Grafic antrenare pentru CNN (cu BN) pe Fete}
 \end{figure}
 
@@ -202,7 +234,7 @@ Ca sa testez teoria ca CNN-ului ii trebuie doar mai mult timp cand adaugam augme
 
 \begin{figure}[h!]
 \centering
-\includegraphics[width=0.8\textwidth]{graphs/augmentations_faces_per_class.png}
+\includegraphics[width=0.8\textwidth]{graphs/aug_ablation/faces_demo.png}
 \caption{Exemple de augmentari pe setul Faces}
 \end{figure}
 
@@ -288,5 +320,29 @@ Pe setul de expresii faciale, situatia a fost diferita si ne arata cat de sensib
     \item \texttt{WeightedRandomSampler} a facut o chestie extrema: a fortat modelul sa recunoasca frica (\texttt{Fear} recall a sarit direct la \textbf{0.79}!), dar a stricat complet predictiile pe restul claselor, mai ales pe clasa majoritara de fericire (\texttt{Happiness}).
     \item \texttt{Focal Loss} a colapsat complet pe fete (acuratete de doar 21\% si F1-macro de 0.19). Asta ne confirma ca pentru setul Faces (care este mult mai complex decat cel cu alunite), aplicarea Focal Loss fara un antrenament de lunga durata sau optimizator bine reglat blocheaza complet procesul de invatare.
 \end{itemize}
+
+\subsection{Sumar General al Evolutiei}
+
+Ca o concluzie vizuala si directa, urmatorul tabel rezuma "the big picture" pentru toata sectiunea de dezechilibru de clase. Am verificat si aliniat valorile baseline-ului pentru exactitate:
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{llcl}
+\toprule
+\textbf{Dataset} & \textbf{Strategie} & \textbf{F1-macro} & \textbf{Obs. cheie} \\
+\midrule
+Moles & none (baseline) & 0.4624 & \texttt{df} recall=0\% \\
+Moles & weighted\_ce & 0.4194 & \texttt{mel} 69\%, \texttt{vasc} 90\%, acc$\downarrow$ \\
+Moles & sampler & 0.4975 & Best overall, \texttt{df} inviat \\
+Moles & focal & 0.3418 & Instabil, acc cade la 43\% \\
+\midrule
+Faces & none (baseline) & 0.4180 & \texttt{Fear}/\texttt{Disgust} moarte \\
+Faces & weighted\_ce & 0.3782 & \texttt{Fear} apare primul \\
+Faces & sampler & 0.3320 & Instabil, mai slab \\
+Faces & focal & 0.1909 & Esec complet in 20 epoci \\
+\bottomrule
+\end{tabular}
+\caption{Sumarul performantelor tehnicilor de echilibrare pe ambele dataset-uri}
+\end{table}
 
 \end{document}
