@@ -22,6 +22,17 @@ from models import SimpleMLP, SimpleCNN
 from train import run_training, evaluate
 from utils import plot_history, plot_confusion_matrix, print_metrics
 
+def set_seed(seed):
+    import random
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    print(f"  [Reproducibilitate] S-a setat seed-ul: {seed}")
+
 # Statistici ImageNet (obligatorii pentru modelele pre-antrenate)
 IMAGENET_NORM = {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
 
@@ -303,9 +314,46 @@ def build_model(args, num_classes):
         model = tv_models.mobilenet_v2(weights=tv_models.MobileNet_V2_Weights.IMAGENET1K_V1)
         for param in model.parameters():
             param.requires_grad = False
+        
+        # Dezghetam selectiv
+        if args.unfreeze_blocks >= 4:
+            for name, param in model.named_parameters():
+                if not name.startswith("classifier"):
+                    param.requires_grad = True
+        elif args.unfreeze_blocks > 0:
+            # Dezghetam ultimele straturi ale backbone-ului (features)
+            # MobileNet-v2 are 19 module in features (0-18)
+            unfreeze_start = max(19 - args.unfreeze_blocks * 2, 0)
+            for i in range(unfreeze_start, 19):
+                for param in model.features[i].parameters():
+                    param.requires_grad = True
+
         in_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(in_features, num_classes)
-        print(f"  MobileNet-v2 pretrained: backbone inghetat, cap nou cu {in_features} -> {num_classes}")
+        if getattr(args, 'complex_head', False):
+            # Cap complex MLP adaptat pentru classifier MobileNet
+            model.classifier = nn.Sequential(
+                nn.Dropout(p=0.2),
+                nn.Linear(in_features, 256),
+                nn.BatchNorm1d(256),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.3),
+                nn.Linear(256, num_classes)
+            )
+            print(f"  MobileNet-v2: cap COMPLEX (1280->256->BN->ReLU->Dropout->{num_classes})")
+        else:
+            model.classifier = nn.Sequential(
+                nn.Dropout(p=0.2),
+                nn.Linear(in_features, num_classes)
+            )
+            print(f"  MobileNet-v2: cap SIMPLU (1280->{num_classes})")
+
+        if args.unfreeze_blocks == 0:
+            frozen_info = "frozen"
+        elif args.unfreeze_blocks >= 4:
+            frozen_info = "fully_unfrozen"
+        else:
+            frozen_info = f"unfreeze_last{args.unfreeze_blocks}blocks"
+        print(f"  MobileNet-v2 pretrained: {frozen_info}")
         return model
 
     else:
@@ -345,12 +393,17 @@ def main():
                         help="Tipul de LR scheduler: none (constant), cosine (CosineAnnealing), warmup_cosine (3ep warmup + cosine)")
     parser.add_argument("--unfreeze_blocks", type=int, default=0,
                         help="Numarul de blocuri ResNet finale de dezghetat (0=complet inghetat, 4=complet dezghetat)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Seed pentru reproducibilitate si ensemble multi-seed")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
     print(f"Config: dataset={args.dataset}, model={args.model}, augment={args.augment}, "
           f"epochs={args.epochs}, imbalance={args.imbalance_strategy}")
+
+    if args.seed is not None:
+        set_seed(args.seed)
 
     # Date
     train_ds, val_ds, class_names = load_datasets(args)
@@ -382,8 +435,9 @@ def main():
         _lr_bb   = lr_backbone if lr_backbone is not None else args.lr * 0.1
         _lr_head = lr_head     if lr_head     is not None else args.lr
 
-        # head = model.fc (poate fi nn.Sequential sau nn.Linear)
-        head_params = list(model.fc.parameters())
+        # Selectam capul dinamic pe baza modelului (fc la ResNet, classifier la MobileNet)
+        head = model.fc if hasattr(model, 'fc') else model.classifier
+        head_params = list(head.parameters())
         head_ids    = {id(p) for p in head_params}
         backbone_params = [p for p in model.parameters()
                            if p.requires_grad and id(p) not in head_ids]
@@ -425,6 +479,7 @@ def main():
         _sched_tag = 'warmup_cosine'
     _head_tag = '_complexhead' if getattr(args, 'complex_head', False) else ''
     _lr_tag   = f"bb{_lr_bb:.0e}" if (is_pretrained_model and args.unfreeze_blocks > 0) else f"lr{args.lr}"
+    _seed_tag = f"_seed{args.seed}" if args.seed is not None else ""
     run_name = f"{args.dataset}_{args.model}" + (
         f"_dp{args.dropout_prob}" if args.model == "mlp" else ""
     ) + (
@@ -435,7 +490,7 @@ def main():
         f"_sched-{_sched_tag}" if is_pretrained else ""
     ) + (
         f"_ub{args.unfreeze_blocks}" if is_pretrained and args.unfreeze_blocks > 0 else ""
-    ) + _head_tag + f"_{_lr_tag}_ep{args.epochs}"
+    ) + _head_tag + f"_{_lr_tag}_ep{args.epochs}" + _seed_tag
 
     # Antrenare
     history = run_training(
