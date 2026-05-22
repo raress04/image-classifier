@@ -9,7 +9,7 @@
 \geometry{a4paper, margin=2cm}
 
 \title{Tema 2 IA - Utilizarea modelelor neurale pentru clasificarea imaginilor}
-\author{Nume Prenume: [Completeaza aici]}
+\author{Balcan Rares Stefan 332CB}
 \date{\today}
 
 \begin{document}
@@ -18,34 +18,36 @@
 
 \section{Arhitectura MLP}
 
-\subsection{Descrierea Arhitecturii}
-Modelul Multi-Layer Perceptron (MLP) pe care l-am implementat ia imaginile redimensionate la o rezolutie fixa de 128x128 pixeli RGB, si le aplatizeaza intr-un vector de 49.152 de trasaturi. Arhitectura e destul de simpla si arata cam asa:
+\subsection{Descrierea Arhitecturii și a Metodei de Antrenare}
+Modelul Multi-Layer Perceptron (MLP) primește imagini RGB de dimensiune $128 \times 128$ pixeli, aplatizate într-un vector de $49.152$ de caracteristici, și are următoarea structură:
 \begin{itemize}
-    \item Un prim strat liniar ascuns de 512 neuroni, urmat de BatchNormalization1d, functia de activare ReLU si Dropout cu probabilitatea de 0.3 ca sa mai reducem din overfitting.
-    \item Un al doilea strat liniar ascuns de 128 neuroni, urmat tot de BatchNormalization1d, ReLU si Dropout (0.3).
-    \item Stratul liniar de iesire cu 7 neuroni, pentru ca avem 7 clase in ambele seturi de date.
+    \item Strat liniar ascuns de 512 neuroni, urmat de \texttt{BatchNorm1d}, activare \texttt{ReLU} și \texttt{Dropout} ($p=0.3$).
+    \item Strat liniar ascuns de 128 neuroni, urmat de \texttt{BatchNorm1d}, activare \texttt{ReLU} și \texttt{Dropout} ($p=0.3$).
+    \item Strat liniar de ieșire cu 7 neuroni (corespunzător celor 7 clase).
 \end{itemize}
 
-Am antrenat modelul folosind optimizatorul Adam. Am lasat un learning rate (lr) initial de $1e-3$ si am adaugat un weight decay de $1e-4$ pentru regularizare L2. Ca functie de loss am mers pe clasicul CrossEntropyLoss. Batch-ul a fost setat la 64 pentru ca s-a miscat bine si n-a dat out of memory.
+Antrenarea s-a realizat timp de 20 de epoci folosind optimizatorul Adam (learning rate inițial $1e-3$, weight decay $1e-4$), funcția de cost \texttt{CrossEntropyLoss} și o dimensiune a lotului (batch size) de 64. Rata de învățare a fost menținută constantă ($1e-3$) pe tot parcursul antrenării (learning rate scheduling constant).
 
-\subsection{Ablatia MLP: Cu vs. Fara Dropout}
-
-Pentru a demonstra utilitatea regularizarii intr-o retea densa, am antrenat modelul MLP timp de 20 de epoci in doua scenarii: cu parametrul de dropout la 0.3 (configuratia noastra standard) si cu dropout setat la 0.0 (fara nicio regularizare).
+\subsection{Ablație MLP: Cu vs. Fără Dropout}
+S-a comparat performanța modelului MLP antrenat timp de 20 de epoci în două configurații: cu dropout $p=0.3$ și fără dropout ($p=0.0$).
 
 \begin{table}[h!]
 \centering
+\setlength{\tabcolsep}{4pt}
+\makebox[\textwidth][c]{
 \begin{tabular}{llccc}
 \toprule
-\textbf{Dataset} & \textbf{Configuratie} & \textbf{Train Acc (Ep. 20)} & \textbf{Val Acc (Ep. 20)} & \textbf{Decalaj (Gap)} \\
+\textbf{Dataset} & \textbf{Configurație} & \textbf{Acc / F1-micro} & \textbf{F1-macro} & \textbf{Gap Train-Val} \\
 \midrule
-Moles & Dropout = 0.3 & 75.3\% & \textbf{73.3\%} & $\sim$2.0\% \\
-Moles & Dropout = 0.0 & \textbf{82.4\%} & 71.8\% & \textbf{$\sim$10.6\%} \\
+Moles & Dropout = 0.3 & \textbf{0.7369} & 0.3980 & $\sim$2.0\% \\
+Moles & Dropout = 0.0 & 0.7249 & \textbf{0.4446} & $\sim$10.6\% \\
 \midrule
-Faces & Dropout = 0.3 & 68.4\% & \textbf{66.2\%} & $\sim$2.2\% \\
-Faces & Dropout = 0.0 & \textbf{78.8\%} & 65.3\% & \textbf{$\sim$13.5\%} \\
+Faces & Dropout = 0.3 & \textbf{0.6560} & 0.5253 & $\sim$2.2\% \\
+Faces & Dropout = 0.0 & 0.6522 & \textbf{0.5291} & $\sim$13.5\% \\
 \bottomrule
 \end{tabular}
-\caption{Ablatie Dropout pe Arhitectura MLP}
+}
+\caption{Ablație Dropout pe Arhitectura MLP}
 \end{table}
 
 \begin{figure}[h!]
@@ -53,278 +55,290 @@ Faces & Dropout = 0.0 & \textbf{78.8\%} & 65.3\% & \textbf{$\sim$13.5\%} \\
 \includegraphics[width=0.48\textwidth]{graphs/mlp_ablation/moles_dropout_ablation.png}
 \hfill
 \includegraphics[width=0.48\textwidth]{graphs/mlp_ablation/faces_dropout_ablation.png}
-\caption{Comparatie Train vs Validation Loss (Dropout 0.3 vs 0.0) pe ambele seturi de date}
+\caption{Comparație Train vs Validation Loss (Dropout 0.3 vs 0.0)}
 \end{figure}
 
-\textbf{Ce am invatat din aceste date:}\\
-Rezultatele demonstreaza perfect fenomenul de \textbf{overfitting (supra-invatare)}. In scenariul in care am eliminat Dropout-ul (\texttt{dp=0.0}), modelul are capacitate maxima la fiecare pas si incepe sa memoreze datele de antrenare: acuratetea de train explodeaza spre 80\%+, insa pe setul de validare performanta stagneaza sau chiar scade. Decalajul (gap-ul) ajunge sa fie masiv, de peste 10-13 procente.
-
-In schimb, mentinerea Dropout-ului la \texttt{0.3} tine reteaua in frau. Fortand neuronii sa nu se bazeze unii pe altii, invatarea este mai lenta si mai conservatoare (train acc se plafoneaza mai jos), dar reteaua generalizeaza vizibil mai bine: acuratetea pe validare a fost superioara pe ambele seturi de date, iar decalajul dintre train si validare a ramas sanatos, in jur de 2\%. Astfel, demonstratia ne arata clar ca un MLP fara regularizare este inutilizabil pe date complexe.
+\textbf{Analiză supra-reglaj (overfitting) / sub-reglaj (underfitting):}\\
+Fără dropout ($p=0.0$), se observă un overfitting pronunțat: funcția de cost pe train scade rapid, iar decalajul (gap-ul) dintre acuratețea de antrenare și cea de validare depășește $10\%$. Introducerea stratului de dropout ($p=0.3$) reduce acest decalaj la $\sim 2\%$, îmbunătățind capacitatea de generalizare a modelului pe ambele seturi de date.
 
 \section{Arhitectura CNN}
 
-\subsection{Descrierea Arhitecturii}
-Pentru Convolutional Neural Network (CNN) am incercat sa fac un model flexibil care sa nu depinda prea tare de rezolutia de intrare, asa ca am pus la finalul blocurilor convolutionale un strat \texttt{AdaptiveAvgPool2d((1,1))}. Arhitectura respecta cerintele din enunt:
+\subsection{Descrierea Arhitecturii și a Metodei de Antrenare}
+Arhitectura rețelei convoluționale (CNN) a fost concepută pentru a fi comună ambelor seturi de date, respectând restricțiile impuse:
 \begin{itemize}
-    \item \textbf{Partea convolutionala (4 straturi):}
+    \item \textbf{Partea convoluțională (4 straturi):}
     \begin{itemize}
-        \item \textbf{Stratul 1:} \texttt{Conv2d} care trece imaginile de la 3 canale RGB la 32 de canale. Aici am facut o mica smecherie: pentru fete am folosit un kernel de $3\times3$, dar la alunite, pentru ca detaliile sunt la o scara mai mare in poze, am pus un kernel de $5\times5$. Dupa convolutie am bagat \texttt{BatchNorm2d}, \texttt{ReLU} si \texttt{MaxPool2d(2)}.
-        \item \textbf{Stratul 2:} \texttt{Conv2d} (de la 32 la 64 canale, kernel $3\times3$), urmat de \texttt{BatchNorm2d}, \texttt{ReLU} si \texttt{MaxPool2d(2)}.
-        \item \textbf{Stratul 3:} \texttt{Conv2d} (de la 64 la 128 canale, kernel $3\times3$), cu \texttt{BatchNorm2d}, \texttt{ReLU} si \texttt{MaxPool2d(2)}.
-        \item \textbf{Stratul 4:} ultimul \texttt{Conv2d} (de la 128 la 256 canale, kernel $3\times3$), urmat doar de \texttt{BatchNorm2d} si \texttt{ReLU}.
-        \item Cum ziceam mai devreme, la finalul extractiei de features am pus \texttt{AdaptiveAvgPool2d((1,1))}, care reduce totul la \texttt{(Batch, 256, 1, 1)}.
+        \item \textbf{Stratul 1:} \texttt{Conv2d} ($3 \rightarrow 32$ canale). S-a utilizat un kernel de $3\times3$ (cu pasul/stride 1) pentru datasetul \texttt{Faces} și un kernel de $5\times5$ (sau două straturi succesive de $3\times3$) pentru \texttt{Moles} pentru a mări câmpul receptiv. Urmează \texttt{BatchNorm2d}, \texttt{ReLU} și \texttt{MaxPool2d(2)}.
+        \item \textbf{Stratul 2:} \texttt{Conv2d} ($32 \rightarrow 64$ canale, kernel $3\times3$), urmat de \texttt{BatchNorm2d}, \texttt{ReLU} și \texttt{MaxPool2d(2)}.
+        \item \textbf{Stratul 3:} \texttt{Conv2d} ($64 \rightarrow 128$ canale, kernel $3\times3$), urmat de \texttt{BatchNorm2d}, \texttt{ReLU} și \texttt{MaxPool2d(2)}.
+        \item \textbf{Stratul 4:} \texttt{Conv2d} ($128 \rightarrow 256$ canale, kernel $3\times3$), urmat de \texttt{BatchNorm2d} și \texttt{ReLU}.
+        \item Reducerea finală a dimensionalității prin pooling global cu stratul \texttt{AdaptiveAvgPool2d}.
     \end{itemize}
     \item \textbf{Partea de clasificare (2 straturi liniare):}
     \begin{itemize}
-        \item Un strat liniar ascuns (de la 256 la 128 neuroni) cu \texttt{ReLU} si un pic de Dropout (0.3).
-        \item Stratul final de iesire (de la 128 la 7 neuroni).
+        \item Strat liniar ascuns ($256 \rightarrow 128$ neuroni) cu activare \texttt{ReLU} și \texttt{Dropout} ($p=0.3$).
+        \item Strat liniar de ieșire ($128 \rightarrow 7$ neuroni).
     \end{itemize}
 \end{itemize}
+Antrenarea s-a realizat timp de 20 de epoci folosind optimizatorul Adam (learning rate inițial $1e-3$, weight decay $1e-4$) și funcția de cost \texttt{CrossEntropyLoss}, cu un batch size de 64. Rata de învățare a fost menținută constantă ($1e-3$) pe tot parcursul celor 20 de epoci (learning rate scheduling constant).
 
-\subsection{Metoda de Antrenare}
-La fel ca la MLP, am antrenat CNN-ul cu Adam ($lr=1e-3$) si CrossEntropyLoss. 
-
-\section{Comparatie Directa Baseline (MLP vs CNN)}
-Prima data am vrut sa vad cum se descurca ambele modele pe setul de date cu alunite ("Vai de pielea mea"), in formatul lor basic: adica fara sa bag nicio augmentare si fara sa rezolv dezechilibrul claselor. 
+\section{Comparație Directă Baseline (MLP vs CNN)}
+S-a efectuat o analiză comparativă între modelul MLP și modelul CNN pe setul de date \texttt{Moles}, utilizând configurațiile de bază (fără augmentare și fără echilibrarea claselor).
 
 \begin{table}[h!]
 \centering
 \begin{tabular}{lcc}
 \toprule
-\textbf{Metrica} & \textbf{CNN Baseline} & \textbf{MLP Baseline} \\
+\textbf{Metrică} & \textbf{CNN Baseline} & \textbf{MLP Baseline} \\
 \midrule
-F1-macro final & 0.4228 & \textbf{0.4242} \\
-Val loss final & \textbf{0.6809} & 0.7450 \\
-Train loss final & 0.6651 & 0.6544 \\
-Acc final & \textbf{0.7444} & 0.7384 \\
+Val Acc / F1-micro & \textbf{0.7534} & 0.7384 \\
+F1-macro final & \textbf{0.4624} & 0.4242 \\
 \bottomrule
 \end{tabular}
-\caption{Comparatie MLP vs CNN pe setul de alunite (baseline, fara augmentari)}
+\caption{Comparație MLP vs CNN pe setul Moles (baseline, fără augmentări)}
 \end{table}
 
 \begin{figure}[h!]
 \centering
 \includegraphics[width=0.8\textwidth]{graphs/cnn_baseline/moles_history.png}
-\caption{Grafic antrenare pentru CNN Baseline pe alunite}
+\caption{Grafic antrenare pentru CNN Baseline pe Moles}
 \end{figure}
 
-\textbf{Interpretare:}\\
-Sincer, a fost destul de neasteptat: pe imagini asa mici (am folosit 128x128), MLP-ul si CNN-ul au scos niste scoruri F1-macro generale cam la fel (diferenta e super mica, 0.0014). Dar cand m-am uitat la detaliile pe clase, MLP-ul s-a descurcat ceva mai bine pe clasele mai rare. De exemplu a scos un \textit{precision} de 0.46 pe melanom (\texttt{mel}) si un F1 de 0.45 pe clasa \texttt{vasc}. 
+\textbf{Analiză supra-reglaj (overfitting) / sub-reglaj (underfitting):}\\
+Modelul CNN Baseline obține o performanță F1-macro superioară modelului MLP ($0.4624$ vs $0.4242$). Cu toate acestea, ambele modele prezintă sub-reglaj pe clasele minoritare (de exemplu, clasa \texttt{df} înregistrează F1-score $0.00$ din cauza numărului extrem de redus de exemple), ceea ce subliniază necesitatea aplicării tehnicilor de echilibrare a datelor.
 
-In acelasi timp, ambele modele s-au chinuit rau pe clasa \texttt{df} (Dermatofibrom) unde au scos F1 fix 0.00, pentru ca pur si simplu sunt prea putine exemple. Ce mi-am dat seama de aici e ca MLP-ul chiar isi face treaba onorabil pe imagini mici, dar CNN-ul probabil abia asteapta sa adaugam augmentari si class balancing ca sa straluceasca.
-
-\section{Ablatia CNN cu si fara Batch Normalization (BatchNorm)}
-
-Dupa aia am zis sa vad cat de mult ajuta de fapt BatchNorm-ul. Am luat arhitectura de CNN si am rulat-o timp de 20 de epoci pe setul cu alunite, testand doua scenarii:
+\section{Ablație CNN: Rolul Batch Normalization}
+S-a analizat impactul introducerii straturilor de normalizare pe loturi (\texttt{BatchNorm2d}) în cadrul arhitecturii CNN antrenate timp de 20 de epoci pe setul \texttt{Moles}, comparând:
 \begin{enumerate}
-    \item \textbf{CNN Baseline (Fara BatchNorm):} Aici toate straturile convolutionale au \texttt{bias=True} si absolut nicio normalizare intre ele.
-    \item \textbf{CNN cu BatchNorm:} La fel, dar cu \texttt{bias=False} (oricum media se centreaza de la BN) si am bagat \texttt{BatchNorm2d} imediat dupa convolutie si inainte de \texttt{ReLU}.
+    \item \textbf{CNN fără BatchNorm:} Toate straturile convoluționale au \texttt{bias=True} și nu conțin straturi de normalizare.
+    \item \textbf{CNN cu BatchNorm:} Straturile convoluționale au \texttt{bias=False}, fiind urmate imediat de \texttt{BatchNorm2d} și de activarea \texttt{ReLU}.
 \end{enumerate}
 
 \subsection{Rezultate Comparative}
-
 \begin{table}[h!]
 \centering
-\begin{tabular}{lccc}
+\begin{tabular}{lcc}
 \toprule
-\textbf{Configuratie CNN} & \textbf{Loss Final (Val)} & \textbf{Acuratete Finala} & \textbf{F1-Macro Final} \\
+\textbf{Configurație CNN} & \textbf{Val Acc / F1-Micro} & \textbf{F1-Macro Final} \\
 \midrule
-Fara BatchNorm & 0.6809 & 0.7444 & 0.4228 \\
-\textbf{Cu BatchNorm} & \textbf{0.6836} & \textbf{0.7534} & \textbf{0.4624} \\
+Fără BatchNorm & 0.6695 & 0.1146 \\
+\textbf{Cu BatchNorm} & \textbf{0.7534} & \textbf{0.4624} \\
 \bottomrule
 \end{tabular}
-\caption{Comparatie performanta globala CNN cu vs fara BatchNorm}
+\caption{Comparație performanță globală CNN cu vs fără BatchNorm}
 \end{table}
 
-\subsection{Analiza per clasa (F1-Score) cu BatchNorm}
-
+\subsection{Analiza per clasă (F1-Score)}
 \begin{table}[h!]
 \centering
 \begin{tabular}{lccc}
 \toprule
-\textbf{Clasa} & \textbf{F1-Score (Fara BN)} & \textbf{F1-Score (Cu BN)} & \textbf{Support} \\
+\textbf{Clasă} & \textbf{F1-Score (Fără BN)} & \textbf{F1-Score (Cu BN)} & \textbf{Support} \\
 \midrule
-akiec & 0.29 & \textbf{0.35} & 65 \\
-bcc & 0.21 & \textbf{0.52} & 103 \\
-bkl & 0.22 & \textbf{0.46} & 220 \\
+akiec & 0.00 & \textbf{0.35} & 65 \\
+bcc & 0.00 & \textbf{0.52} & 103 \\
+bkl & 0.00 & \textbf{0.46} & 220 \\
 df & 0.00 & 0.00 & 23 \\
 mel & 0.00 & \textbf{0.40} & 222 \\
-nv & 0.83 & \textbf{0.88} & 1341 \\
+nv & 0.80 & \textbf{0.88} & 1341 \\
 vasc & 0.00 & \textbf{0.63} & 29 \\
 \bottomrule
 \end{tabular}
-\caption{F1-Score pe clase pentru ablatia BatchNorm}
+\caption{F1-Score pe clase pentru ablația BatchNorm}
 \end{table}
 
-\textbf{Ce s-a intamplat de fapt:}\\
-Aici chiar s-a vazut o diferenta masiva. Dupa ce am adaugat \texttt{BatchNorm2d}, modelul a devenit mult mai stabil, iar scorul F1-macro a crescut zdravan de la \textbf{0.4228} la \textbf{0.4624}. 
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/norm_ablation/moles_no_bn_history.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/norm_ablation/moles_cnn_aug-none_bnTrue_lr0.001_ep20_history.png}
+\caption{Curbele de antrenare (Train vs. Test Loss și Performanță) pentru CNN fără BatchNorm (stânga) vs. cu BatchNorm (dreapta) pe Moles}
+\label{fig:cnn_bn_ablation}
+\end{figure}
 
-Fara BatchNorm, modelul se pierdea total la clasele rare (melanomul \texttt{mel} si \texttt{vasc} aveau F1 de 0.00, adica reteaua nici nu se uita la ele). Normalizarea asta pe loturi a calmat treaba cu gradientii si a obligat reteaua sa ia in seama si trasaturile din clasele mai slabe numeric. Pe clasele rare rezultatele au explodat: \texttt{mel} a ajuns la \textbf{0.40}, \texttt{bcc} s-a dublat la \textbf{0.52}, si \texttt{vasc} a ajuns la \textbf{0.63}. Din nou, \texttt{df} (care are abia 23 de imagini) a ramas la 0, dar incercam sa o scoatem la capat mai tarziu prin metodele de imbalance.
+\textbf{Analiză supra-reglaj și sub-reglaj (overfit/underfit):}\\
+Fără \texttt{BatchNorm2d}, modelul suferă de sub-reglaj sever din cauza instabilității gradienților, obținând un F1-macro de doar $0.1146$ (clasele rare au F1-score zero). Adăugarea normalizării stabilizează antrenarea, crescând F1-macro la $0.4624$, aspect vizibil direct pe curbele de loss și acuratețe din Figura~\ref{fig:cnn_bn_ablation}. Se observă o îmbunătățire semnificativă pe clasele minoritare (de exemplu, F1-score pentru \texttt{mel} crește la $0.40$, iar pentru \texttt{vasc} la $0.63$).
 
-\section{Ablatia CNN pe Configuratii de Augmentare a Datelor}
-
-Mai departe, am vrut sa vad ce se intampla cand aruncam niste augmentari in mix, ca sa oprim eventualul overfitting. Am rulat modelul CNN (cel bun, cu BatchNorm) inca 20 de epoci pe 4 combinatii diferite:
+\section{Ablație CNN: Augmentarea Datelor}
+S-a evaluat impactul diferitelor scheme de augmentare aplicate modelului CNN (cu BatchNorm) pe parcursul a 20 de epoci pe setul \texttt{Moles}:
 \begin{itemize}
-    \item \texttt{none}: Nimic fancy, doar resize si normalizare pe poze (asta a fost Baseline-ul meu).
-    \item \texttt{geometric}: Le-am rotit aleator cu max 15 grade, le-am facut crop si un flip pe orizontala.
-    \item \texttt{color}: M-am jucat putin cu luminozitatea, contrastul si saturatia (folosind \texttt{ColorJitter}).
-    \item \texttt{all}: Le-am combinat pe cele geometrice cu cele de culoare.
+    \item \texttt{none}: Doar redimensionare și normalizare (baseline).
+    \item \texttt{geometric}: Rotații aleatoare (maxim $15^\circ$), decupare aleatoare (crop) și reflexie orizontală (flip).
+    \item \texttt{color}: Modificări de contrast, luminozitate și saturație prin \texttt{ColorJitter}.
+    \item \texttt{all}: Combinarea augmentărilor geometrice cu cele de culoare.
 \end{itemize}
 
 \begin{figure}[h!]
 \centering
 \includegraphics[width=0.8\textwidth]{graphs/aug_ablation/moles_demo.png}
-\caption{Exemple de augmentari pe setul Moles}
+\caption{Exemple de augmentări pe setul Moles}
 \end{figure}
 
 \subsection{Rezultate Comparative}
-
 \begin{table}[h!]
 \centering
-\begin{tabular}{lcccc}
+\begin{tabular}{lcc}
 \toprule
-\textbf{Configuratie Augmentare} & \textbf{Loss (Train)} & \textbf{Loss (Val)} & \textbf{F1-Macro} & \textbf{Acuratete} \\
+\textbf{Configurație Augmentare} & \textbf{Val Acc / F1-Micro} & \textbf{F1-Macro} \\
 \midrule
-Fara augmentari (\texttt{none}) & 0.6606 & \textbf{0.6836} & \textbf{0.4624} & \textbf{0.7534} \\
-Geometric (\texttt{geometric}) & 0.6791 & 0.6948 & 0.4483 & 0.7434 \\
-Culoare (\texttt{color}) & 0.7178 & 0.7171 & 0.4430 & 0.7374 \\
-Toate (\texttt{all}) & 0.7509 & 0.7251 & 0.4233 & 0.7424 \\
+Fără augmentări (\texttt{none}) & \textbf{0.7534} & \textbf{0.4624} \\
+Geometric (\texttt{geometric}) & 0.7434 & 0.4483 \\
+Culoare (\texttt{color}) & 0.7374 & 0.4430 \\
+Toate (\texttt{all}) & 0.7424 & 0.4233 \\
 \bottomrule
 \end{tabular}
-\caption{Cum s-au comportat diferitele tipuri de augmentari (20 epoci)}
+\caption{Efectul diferitelor tipuri de augmentări (20 epoci)}
 \end{table}
 
-\textbf{Overfitting vs. Underfitting:}\\
-La prima vedere, pare ca am dat fail: odata ce am adaugat augmentari, performanta (F1-macro) a tot scazut (de la 0.46 la \texttt{none}, pana la 0.42 la \texttt{all}). Dar daca ne uitam atent pe train loss si val loss, intelegem ce se intampla. 
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.32\textwidth]{graphs/aug_ablation/moles_cnn_aug-geometric_bnTrue_lr0.001_ep20_history.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{graphs/aug_ablation/moles_cnn_aug-color_bnTrue_lr0.001_ep20_history.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{graphs/aug_ablation/moles_cnn_aug-all_bnTrue_lr0.001_ep20_history.png}
+\caption{Curbele de antrenare pentru configurațiile de augmentare pe Moles: Geometric (stânga), Color (mijloc) și All (dreapta)}
+\label{fig:cnn_aug_ablation_moles}
+\end{figure}
 
-La modelul fara augmentari (baseline), incepuse sa apara un usor overfitting (train loss scazuse mai mult decat val loss). Cand am adaugat transformarile de \texttt{color} si \texttt{all}, diferenta s-a reglat, adica regularizarea chiar a functionat. Motivul pentru care scorurile finale sunt mai slabe e de fapt \textbf{underfitting-ul}. Imaginile modificate sunt mult mai greu de inteles pentru retea, iar in alea 20 de epoci pe care i le-am dat, modelul inca nu a apucat sa proceseze bine toata varietatea asta noua. Ca sa stoarcem maximul din augmentari, ne-ar trebui antrenari mult mai lungi, probabil spre 100 de epoci.
+\textbf{Analiză supra-reglaj și sub-reglaj (overfit/underfit):}\\
+În absența augmentării (configurația \texttt{none}), se observă debutul supra-reglajului (decalaj între pierderea de antrenare și cea de validare). Aplicarea schemelor de augmentare (\texttt{color}, \texttt{all}) reduce acest decalaj, acționând ca regularizare (așa cum se observă din curbele de loss din Figura~\ref{fig:cnn_aug_ablation_moles}). Totuși, performanța F1-macro scade în cele 20 de epoci din cauza sub-reglajului (complexitatea datelor augmentate necesită un număr mai mare de epoci de antrenare pentru convergență).
 
-\section{Particularitati pe Setul "You're on Candid Camera" (Fete)}
-
-Ca sa nu testez totul doar pe alunite, am trecut si pe al doilea set, cel cu expresii faciale. Am rulat rapid un test de 20 de epoci fara augmentari ca sa compar MLP, CNN simplu si CNN cu BatchNorm. 
+\section{Particularități pe Setul „You're on Candid Camera” (Faces)}
+S-au comparat performanțele modelelor MLP și CNN (cu și fără BatchNorm) antrenate timp de 20 de epoci pe setul \texttt{Faces}, fără augmentări.
 
 \begin{table}[h!]
 \centering
 \begin{tabular}{lcc}
 \toprule
-\textbf{Model pe dataset "Faces"} & \textbf{F1-Macro Final} & \textbf{Acuratete Finala} \\
+\textbf{Model pe dataset „Faces”} & \textbf{Val Acc / F1-Micro} & \textbf{F1-Macro Val} \\
 \midrule
-\textbf{MLP} & \textbf{0.5224} & \textbf{0.6543} \\
-CNN (Fara BatchNorm) & 0.2432 & 0.5133 \\
-CNN (Cu BatchNorm) & 0.4180 & 0.6053 \\
+MLP (Dropout 0.3) & 0.6560 & \textbf{0.5253} \\
+CNN (Fără BatchNorm) & 0.5128 & 0.2471 \\
+CNN (Cu BatchNorm) & \textbf{0.5868} & 0.4229 \\
 \bottomrule
 \end{tabular}
-\caption{Performanta modelelor pe setul cu expresii faciale}
+\caption{Performanța modelelor pe setul cu expresii faciale}
 \end{table}
 
 \begin{figure}[h!]
 \centering
 \includegraphics[width=0.8\textwidth]{graphs/cnn_baseline/faces_history.png}
-\caption{Grafic antrenare pentru CNN (cu BN) pe Fete}
+\caption{Grafic antrenare pentru CNN (cu BN) pe Faces}
 \end{figure}
 
-\subsection{Interpretare}
-Am observat un lucru foarte interesant: pe fete, daca nu aplici nicio tehnica suplimentara (fara augmentari, fara class weighting), MLP-ul o duce efectiv mai bine decat CNN-ul (F1 de 0.52 fata de 0.41). De ce? Pentru ca MLP-ul are un Dropout destul de puternic de 0.3 care il regularizeaza frumos din start. 
+\textbf{Analiză supra-reglaj (overfitting) / sub-reglaj (underfitting):}\\
+Pe setul \texttt{Faces}, modelul MLP obține performanțe superioare rețelelor convoluționale simple datorită regularizării eficiente prin Dropout ($p=0.3$). Modelul CNN fără BatchNorm suferă de sub-reglaj major (gradient vanishing/exploding), clasificând majoritatea exemplelor în clasa dominantă (\texttt{Happiness}). Introducerea \texttt{BatchNorm} stabilizează modelul și crește F1-macro la $0.4229$.
 
-CNN-ul, in schimb, e o retea mai "lacoma" dupa capacitate si tinde sa dea overfit rapid daca nu ii dam augmentari. Iar la fel ca la alunite, CNN-ul fara BatchNorm pur si simplu pica, gradientii o iau razna, iar modelul alege sa clasifice totul in clasa cu cele mai multe fete (Happiness). Deci, MLP-ul castiga runda asta doar pentru ca e un model mai batos, nu pentru ca e mai potrivit pentru poze.
-
-\subsection{Ablatia Augmentarilor pe CNN (cu BatchNorm) la Fete}
-
-Ca sa testez teoria ca CNN-ului ii trebuie doar mai mult timp cand adaugam augmentari, am reluat procesul de la alunite pe cele 4 tipuri de transformari:
+\subsection{Ablația Augmentărilor pe CNN (cu BatchNorm) la Faces}
+S-a analizat impactul aceleiași scheme de augmentare pe setul \texttt{Faces}:
 
 \begin{figure}[h!]
 \centering
 \includegraphics[width=0.8\textwidth]{graphs/aug_ablation/faces_demo.png}
-\caption{Exemple de augmentari pe setul Faces}
+\caption{Exemple de augmentări pe setul Faces}
 \end{figure}
 
 \begin{table}[h!]
 \centering
 \begin{tabular}{lcc}
 \toprule
-\textbf{Configuratie} & \textbf{F1-Macro} & \textbf{Acuratete} \\
+\textbf{Configurație} & \textbf{Val Acc / F1-Micro} & \textbf{F1-Macro Val} \\
 \midrule
-Fara augmentari (\texttt{none}) & \textbf{0.4180} & \textbf{0.6053} \\
-Geometric (\texttt{geometric}) & 0.2466 & 0.3195 \\
-Culoare (\texttt{color}) & 0.3252 & 0.5580 \\
-Toate (\texttt{all}) & 0.3276 & 0.3990 \\
+Fără augmentări (\texttt{none}) & 0.5868 & 0.4229 \\
+Geometric (\texttt{geometric}) & 0.6042 & \textbf{0.4532} \\
+Culoare (\texttt{color}) & \textbf{0.6157} & 0.4212 \\
+Toate (\texttt{all}) & 0.5836 & 0.3626 \\
 \bottomrule
 \end{tabular}
-\caption{Rezultate augmentari pe expresii faciale}
+\caption{Rezultate augmentări pe expresii faciale}
 \end{table}
 
-\textbf{Ce putem trage de aici:}\\
-Aici se vede din nou underfitting-ul pentru ca 20 de epoci sunt pur si simplu prea putine ca sa invete un model cu asa mult 'zgomot' nou. Dar mai important e altceva: augmentarile geometrice i-au dat damage masiv (acuratetea a picat la jumatate, la 31\%). Asta s-a intamplat pentru ca in setul \textit{Candid Camera}, fetele sunt deja centrate manual (aliniate facial). Cand am pus \textit{RandomCrop} si rotatii, am stricat practic alinierea asta perfecta, iar CNN-ul a fost nevoit sa reinvete de la zero sa gaseasca fetele in poze, inainte sa recunoasca emotiile. 
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.32\textwidth]{graphs/aug_ablation/faces_cnn_aug-geometric_bnTrue_lr0.001_ep20_history.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{graphs/aug_ablation/faces_cnn_aug-color_bnTrue_lr0.001_ep20_history.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{graphs/aug_ablation/faces_cnn_aug-all_bnTrue_lr0.001_ep20_history.png}
+\caption{Curbele de antrenare pentru configurațiile de augmentare pe Faces: Geometric (stânga), Color (mijloc) și All (dreapta)}
+\label{fig:cnn_aug_ablation_faces}
+\end{figure}
 
-Pe partea cealalta, modificarile de culoare (\texttt{color}) au lasat modelul sa "respire" la o acuratete decenta de 55\%, fiindca nu i-au mutat pixelii cheie din loc. Ideea de final: cand lucrezi cu date pre-aliniate (cum sunt in general fetele), nu baga augmentari geometrice agresive daca nu esti pregatit sa antrenezi o saptamana intreaga!
+\textbf{Analiză supra-reglaj și sub-reglaj (overfit/underfit):}\\
+Augmentările geometrice și cele de culoare oferă o ușoară îmbunătățire a generalizării în cele 20 de epoci (F1-macro crește la $0.4532$ pentru geometric, curbele putând fi analizate comparativ în Figura~\ref{fig:cnn_aug_ablation_faces}). Combinarea tuturor augmentărilor (\texttt{all}) duce la un debut de sub-reglaj (F1-macro scade la $0.3626$), zgomotul suplimentar introdus necesitând un timp de antrenare mai lung pentru adaptare.
 
-\section{Tratarea Dezechilibrului de Clase (Ablatii)}
-
-In acest experiment, am vrut sa scapam de marea problema a ambelor seturi: faptul ca modelul tinde sa ignore complet clasele minoritare pentru ca e mult mai usor sa dea predictii doar pe clasa majoritara (cum e \texttt{nv} la alunite sau \texttt{Happiness} la fete). 
-
-Am testat trei strategii de echilibrare pe aceeasi configuratie de baza (CNN cu BatchNorm, fara augmentari, 20 de epoci):
+\section{Tratarea Dezechilibrului de Clase (Ablații)}
+S-au evaluat trei strategii de combatere a dezechilibrului claselor, utilizând modelul CNN (cu BatchNorm) antrenat timp de 20 de epoci fără augmentări:
 \begin{itemize}
-    \item \texttt{none}: Baseline-ul simplu (fara ajustari).
-    \item \texttt{weighted\_ce}: Ponderarea functiei de loss conform formulei din enunt: $w_c = \frac{N_{total}}{K \cdot N_c}$. Asta inseamna ca penalizam mult mai dur greselile pe clasele rare.
-    \item \texttt{sampler}: Utilizarea unui \texttt{WeightedRandomSampler} la nivel de DataLoader, determinand reteaua sa primeasca mai des in batch-uri imagini din clasele rare (oversampling din zbor).
-    \item \texttt{focal}: Folosirea Focal Loss pentru a forta modelul sa ignore mostrele usoare (cum e clasa majoritara) si sa se concentreze pe cele grele.
+    \item \texttt{none}: Antrenare standard fără corecții (baseline).
+    \item \texttt{weighted\_ce}: Ponderarea funcției de cost: $w_c = \frac{N_{total}}{K \cdot N_c}$.
+    \item \texttt{sampler}: Utilizarea unui \texttt{WeightedRandomSampler} în loader pentru supra-eșantionarea (oversampling) claselor minoritare.
+    \item \texttt{focal}: Utilizarea Focal Loss cu pondere $\alpha$ invers proporțională și $\gamma=2.0$ pentru a prioritiza mostrele dificile.
 \end{itemize}
 
 \subsection{Rezultate pe Setul de Alunite (Moles)}
-
 \begin{table}[h!]
 \centering
+\setlength{\tabcolsep}{4pt}
+\makebox[\textwidth][c]{
 \begin{tabular}{lccccc}
 \toprule
-\textbf{Strategie} & \textbf{F1-Macro} & \textbf{Acuratete} & \textbf{Recall df} & \textbf{Recall mel} & \textbf{Recall vasc} \\
+\textbf{Strategie} & \textbf{Acc / F1-micro} & \textbf{F1-macro} & \textbf{Rec. df} & \textbf{Rec. mel} & \textbf{Rec. vasc} \\
 \midrule
-Baseline (\texttt{none}) & 0.4624 & \textbf{0.7534} & 0.00 & 0.00 & 0.00 \\
-Weighted CE & 0.4194 & 0.5731 & 0.17 & \textbf{0.69} & \textbf{0.90} \\
-\textbf{Weighted Sampler} & \textbf{0.4975} & 0.6430 & \textbf{0.48} & 0.52 & 0.86 \\
-Focal Loss & 0.3418 & 0.4319 & 0.35 & 0.56 & 0.76 \\
+Baseline (\texttt{none}) & \textbf{0.7534} & 0.4624 & 0.00 & 0.32 & 0.55 \\
+Weighted CE & 0.5731 & 0.4194 & 0.17 & \textbf{0.69} & \textbf{0.90} \\
+\textbf{Weighted Sampler} & 0.6430 & \textbf{0.4975} & \textbf{0.48} & 0.52 & 0.86 \\
+Focal Loss & 0.4408 & 0.3628 & 0.30 & 0.48 & 0.79 \\
 \bottomrule
 \end{tabular}
-\caption{Ablatie imbalance pe setul Moles}
+}
+\caption{Ablație imbalance pe setul Moles}
 \end{table}
 
-\textbf{Ce am observat pe Alunite:}\\
-Aici rezultatele au fost super clare si interesante:
-\begin{itemize}
-    \item \texttt{WeightedRandomSampler} a fost clar campionul. A ridicat scorul F1-macro global la un remarcabil \textbf{0.4975} (fata de 0.4624 pe baseline). Cel mai tare e ca a reusit sa aduca la viata clasa extrem de rara \texttt{df} (Dermatofibrom, doar 23 de imagini), care inainte era complet moarta (F1=0.00). Cu sampler, recall-ul pe \texttt{df} a sarit la \textbf{0.48} (F1=0.20), iar acuratetea a ramas la un nivel bun de 64\%.
-    \item \texttt{Weighted CrossEntropy} a ajutat si ea masiv clasele rare, impingand recall-ul pe melanom (\texttt{mel}) la \textbf{0.69} si pe leziuni vasculare (\texttt{vasc}) la un urias \textbf{0.90}. Totusi, pretul platit a fost o scadere destul de mare a acuratetii globale (la 57\%), deoarece modelul a inceput sa creada prea des ca alunițele comune (\texttt{nv}) sunt de fapt alte chestii.
-    \item \texttt{Focal Loss} a mers destul de slab in cele 20 de epoci. Reteaua a invatat extrem de greu, acuratetea prabusindu-se la 43\%. Se pare ca Focal are nevoie de mult mai multe epoci sau de un tuning fin al hiperparametrului $\gamma$ ca sa functioneze bine.
-\end{itemize}
+\textbf{Analiză supra-reglaj (overfitting) / sub-reglaj (underfitting):}\\
+\texttt{WeightedRandomSampler} oferă cele mai bune performanțe pe setul \texttt{Moles}, crescând F1-macro la $0.4975$ și reactivând clasa extrem de rară \texttt{df} (recall $0.48$, față de $0.00$ la baseline). \texttt{Weighted CE} îmbunătățește sensibilitatea claselor minoritare (\texttt{mel} recall $0.69$, \texttt{vasc} recall $0.90$), dar induce un sub-reglaj pe clasa majoritară \texttt{nv}, scăzând acuratețea globală la $57.3\%$. Focal Loss obține rezultate slabe ($0.3628$ F1-macro) din cauza dificultății de convergență în 20 de epoci.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/imbalance_ablation/moles_sampler_history.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/imbalance_ablation/moles_weighted_ce_history.png}
+\caption{Istoricul antrenării pe Moles cu tehnici de echilibrare: Weighted Random Sampler (stânga) și Weighted Cross Entropy (dreapta)}
+\end{figure}
 
 \subsection{Rezultate pe Setul de Expresii Faciale (Faces)}
-
 \begin{table}[h!]
 \centering
+\setlength{\tabcolsep}{4pt}
+\makebox[\textwidth][c]{
 \begin{tabular}{lccccc}
 \toprule
-\textbf{Strategie} & \textbf{F1-Macro} & \textbf{Acuratete} & \textbf{Recall Fear} & \textbf{Recall Disgust} & \textbf{Recall Anger} \\
+\textbf{Strategie} & \textbf{Acc / F1-micro} & \textbf{F1-macro} & \textbf{Rec. Fear} & \textbf{Rec. Disgust} & \textbf{Rec. Anger} \\
 \midrule
-Baseline (\texttt{none}) & \textbf{0.4180} & \textbf{0.6053} & 0.00 & 0.01 & 0.12 \\
-Weighted CE & 0.3782 & 0.4605 & 0.26 & 0.11 & \textbf{0.11} \\
-Weighted Sampler & 0.3320 & 0.4883 & \textbf{0.79} & 0.07 & 0.09 \\
-Focal Loss & 0.1909 & 0.2123 & 0.07 & \textbf{0.51} & 0.32 \\
+Baseline (\texttt{none}) & \textbf{0.5868} & 0.4229 & 0.00 & 0.02 & 0.42 \\
+Weighted CE & 0.5558 & 0.4004 & 0.26 & 0.07 & 0.21 \\
+Weighted Sampler & 0.4997 & \textbf{0.4740} & \textbf{0.43} & \textbf{0.61} & 0.37 \\
+Focal Loss & 0.3048 & 0.3028 & 0.52 & 0.30 & \textbf{0.35} \\
 \bottomrule
 \end{tabular}
-\caption{Ablatie imbalance pe setul Faces}
+}
+\caption{Ablație imbalance pe setul Faces}
 \end{table}
 
-\textbf{Ce am observat pe Fete:}\\
-Pe setul de expresii faciale, situatia a fost diferita si ne arata cat de sensibile sunt fetele la schimbarea distributiei:
-\begin{itemize}
-    \item Nicio strategie de balansare nu a depasit F1-macro-ul baseline-ului (\textbf{0.4180}), dar acest scor mare de baseline era din nou "fals", deoarece recall-ul pe clasele critice precum \texttt{Fear} (0.00) sau \texttt{Disgust} (0.01) era practic zero.
-    \item \texttt{Weighted CE} a fost cea mai stabila metoda de corectie: a adus recall-ul la \texttt{Fear} la \textbf{0.26} si la \texttt{Disgust} la \textbf{0.11}, mentinand un F1-macro decent de 0.37.
-    \item \texttt{WeightedRandomSampler} a facut o chestie extrema: a fortat modelul sa recunoasca frica (\texttt{Fear} recall a sarit direct la \textbf{0.79}!), dar a stricat complet predictiile pe restul claselor, mai ales pe clasa majoritara de fericire (\texttt{Happiness}).
-    \item \texttt{Focal Loss} a colapsat complet pe fete (acuratete de doar 21\% si F1-macro de 0.19). Asta ne confirma ca pentru setul Faces (care este mult mai complex decat cel cu alunite), aplicarea Focal Loss fara un antrenament de lunga durata sau optimizator bine reglat blocheaza complet procesul de invatare.
-\end{itemize}
+\textbf{Analiză supra-reglaj (overfitting) / sub-reglaj (underfitting):}\\
+Pe setul \texttt{Faces}, \texttt{WeightedRandomSampler} înregistrează cea mai bună performanță F1-macro ($0.4740$), crescând recall-ul pe clasele rare \texttt{Fear} ($0.43$) și \texttt{Disgust} ($0.61$). \texttt{Weighted CE} oferă un compromis bun, menținând acuratețea globală la $55.58\%$, în timp ce Focal Loss prezintă o instabilitate puternică a antrenării (acuratețe globală de doar $30.48\%$).
 
-\subsection{Sumar General al Evolutiei}
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/imbalance_ablation/faces_sampler_history.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/imbalance_ablation/faces_weighted_ce_history.png}
+\caption{Istoricul antrenării pe Faces cu tehnici de echilibrare: Weighted Random Sampler (stânga) și Weighted Cross Entropy (dreapta)}
+\end{figure}
 
-Ca o concluzie vizuala si directa, urmatorul tabel rezuma "the big picture" pentru toata sectiunea de dezechilibru de clase. Am verificat si aliniat valorile baseline-ului pentru exactitate:
-
+\subsection{Sumar General al Rezultatelor pe Dezechilibru de Clase}
+Următorul tabel centralizează comparativ performanțele tehnicilor de rebalansare:
 \begin{table}[h!]
 \centering
 \begin{tabular}{llcl}
@@ -333,16 +347,224 @@ Ca o concluzie vizuala si directa, urmatorul tabel rezuma "the big picture" pent
 \midrule
 Moles & none (baseline) & 0.4624 & \texttt{df} recall=0\% \\
 Moles & weighted\_ce & 0.4194 & \texttt{mel} 69\%, \texttt{vasc} 90\%, acc$\downarrow$ \\
-Moles & sampler & 0.4975 & Best overall, \texttt{df} inviat \\
-Moles & focal & 0.3418 & Instabil, acc cade la 43\% \\
+Moles & sampler & \textbf{0.4975} & Cel mai bun F1-macro, \texttt{df} reactivat \\
+Moles & focal & 0.3628 & Instabil, acuratețe $44\%$ \\
 \midrule
-Faces & none (baseline) & 0.4180 & \texttt{Fear}/\texttt{Disgust} moarte \\
-Faces & weighted\_ce & 0.3782 & \texttt{Fear} apare primul \\
-Faces & sampler & 0.3320 & Instabil, mai slab \\
-Faces & focal & 0.1909 & Esec complet in 20 epoci \\
+Faces & none (baseline) & 0.4229 & \texttt{Fear}/\texttt{Disgust} recall $\sim$0\% \\
+Faces & weighted\_ce & 0.4004 & Crește recall-ul \texttt{Fear} la 26\% \\
+Faces & sampler & \textbf{0.4740} & Cel mai bun F1-macro, recall \texttt{Fear} 43\% \\
+Faces & focal & 0.3028 & Performanță scăzută în 20 epoci \\
 \bottomrule
 \end{tabular}
-\caption{Sumarul performantelor tehnicilor de echilibrare pe ambele dataset-uri}
+\caption{Sumarul performanțelor tehnicilor de echilibrare pe ambele dataset-uri}
 \end{table}
+
+\section{Fine-tuning și Transfer Learning cu ResNet-18}
+S-a evaluat utilizarea rețelei pre-antrenate \texttt{ResNet-18} (pe ImageNet) în două scenarii distincte de antrenare:
+\begin{itemize}
+    \item \textbf{Scenariul 1: Backbone înghețat (30 epoci):} S-a antrenat doar clasificatorul liniar final (\texttt{fc}), cu rată de învățare $1e-3$ și augmentări geometrice (cu/fără warmup de 5 epoci).
+    \item \textbf{Scenariul 2: Dezghețare selectivă (50 de epoci):} S-au dezghețat ultimele 2 blocuri reziduale (\texttt{layer3} și \texttt{layer4}). S-a utilizat \texttt{WeightedRandomSampler} pentru echilibrarea claselor și augmentări specifice fiecărui set. S-a comparat impactul prezenței/absenței warmup-ului.
+\end{itemize}
+
+\subsection{Rezultate și Analiză}
+\begin{table}[h!]
+\centering
+\setlength{\tabcolsep}{4pt}
+\makebox[\textwidth][c]{
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Dataset} & \textbf{Configurație ResNet-18} & \textbf{Epoci} & \textbf{Warmup} & \textbf{Acc / F1-micro} & \textbf{F1-macro} \\
+\midrule
+Moles & Scenariul 1 (Backbone frozen) & 30 & Nu & 0.7489 & 0.5195 \\
+Moles & Scenariul 1 (Backbone frozen) & 30 & Da & 0.7404 & 0.4992 \\
+Moles & Scenariul 2 (Dezghețat 2 blocuri + Sampler) & 50 & Nu & \textbf{0.8432} & \textbf{0.7267} \\
+Moles & Scenariul 2 (Dezghețat 2 blocuri + Sampler) & 50 & Da & 0.8397 & 0.7266 \\
+\midrule
+Faces & Scenariul 1 (Backbone frozen) & 30 & Nu & 0.5079 & 0.4004 \\
+Faces & Scenariul 1 (Backbone frozen) & 30 & Da & 0.5231 & 0.3971 \\
+Faces & Scenariul 2 (Dezghețat 2 blocuri + Sampler) & 50 & Nu & 0.7703 & 0.6741 \\
+Faces & Scenariul 2 (Dezghețat 2 blocuri + Sampler) & 50 & Da & \textbf{0.7790} & \textbf{0.6784} \\
+\bottomrule
+\end{tabular}
+}
+\caption{Impactul dezghețării selective și al warmup-ului pe ResNet-18}
+\end{table}
+
+\textbf{Analiză unfreezing-ului și a warmup-ului (supra-reglaj / sub-reglaj):}\\
+Înghețarea completă a backbone-ului (Scenariul 1) limitează F1-macro la $\sim 0.52$ (Moles) și $\sim 0.40$ (Faces), indicând sub-reglaj din cauza capacității reduse a modelului. Dezghețarea ultimelor 2 blocuri reziduale (Scenariul 2) determină o creștere masivă a F1-macro la \textbf{0.7267} (Moles) și \textbf{0.6784} (Faces), indicând necesitatea adaptării filtrelor convoluționale. Procedura de warmup aduce un beneficiu în Scenariul 2 pe setul \texttt{Faces} ($0.6784$ vs $0.6741$), stabilizând antrenarea în prezența datelor augmentate, efect ilustrat prin curbele comparative din Figura~\ref{fig:faces_resnet18_scenariul2} (iar pentru Scenariul 1 în Figura~\ref{fig:faces_resnet18_scenariul1}).
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/moles_resnet18_aug-geometric_bnFalse_imb-none_nowarmup_lr0.001_ep30_history.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/moles_resnet18_aug-geometric_bnFalse_imb-none_warmup_lr0.001_ep30_history.png}
+\caption{Evoluție ResNet-18 pe Moles în Scenariul 1: Fără Warmup (stânga) vs. Cu Warmup (dreapta)}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/moles_resnet18_aug-geometric_bnFalse_imb-sampler_nowarmup_ub2_lr0.001_ep50_history.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/moles_resnet18_aug-geometric_bnFalse_imb-sampler_warmup_ub2_lr0.001_ep50_history.png}
+\caption{Evoluție ResNet-18 pe Moles în Scenariul 2: Fără Warmup (stânga) vs. Cu Warmup (dreapta)}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.6\textwidth]{graphs/faces_resnet18_aug-geometric_bnFalse_imb-none_warmup_lr0.001_ep30_history.png}
+\caption{Evoluție ResNet-18 pe Faces în Scenariul 1 (cu Warmup)}
+\label{fig:faces_resnet18_scenariul1}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/faces_resnet18_aug-color_bnFalse_imb-sampler_nowarmup_ub2_lr0.001_ep50_history.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/faces_resnet18_aug-color_bnFalse_imb-sampler_warmup_ub2_lr0.001_ep50_history.png}
+\caption{Evoluție ResNet-18 pe Faces în Scenariul 2: Fără Warmup (stânga) vs. Cu Warmup (dreapta)}
+\label{fig:faces_resnet18_scenariul2}
+\end{figure}
+
+\section{Curriculum Learning pe setul de date Moles (Bonus 4.1)}
+S-a evaluat impactul Curriculum Learning pe setul de date \texttt{Moles}, utilizând modelul \texttt{ResNet-18} pre-antrenat cu ultimele 2 blocuri reziduale dezghețate, antrenat timp de 40 de epoci cu ponderea claselor (Weighted CE) și scheduler \texttt{CosineAnnealing}.
+
+\subsection{Definirea Dificultății și Funcția de Pacing}
+\begin{enumerate}
+    \item \textbf{Definirea dificultății imaginii:} Ca proxy pentru dificultate, s-a utilizat:
+    \[
+    \text{Dificultate} = 1.0 - \text{Var}_{\text{norm}}(\text{imagine})
+    \]
+    unde varianța normalizată reprezintă contrastul imaginii grayscale. Distribuția scorurilor calculate este prezentată în Figura~\ref{fig:cl_difficulty} (stânga).
+    
+    \item \textbf{Funcția de pacing (Strategia 1):} La epoca 0 se începe cu primele 30\% cele mai ușoare imagini, crescând proporția liniar până la 100\% la epoca 20, valoare menținută constantă ulterior (Figura~\ref{fig:cl_difficulty}, dreapta).
+    
+    \item \textbf{Self-Paced Learning (Strategia 2):} La fiecare epocă se calculează funcția de cost a modelului pe fiecare imagine. Sunt reținute pentru antrenare doar imaginile cu o valoare a funcției de cost mai mică decât percentila curentă $q$, unde $q$ crește liniar de la $0.3$ la $1.0$ (cu un pas de $0.05$ pe epocă).
+\end{enumerate}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/moles_cl_difficulty_distribution.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/moles_cl_pacing_curve.png}
+\caption{Distribuția dificultății pe setul Moles (stânga) și funcția de pacing static (dreapta)}
+\label{fig:cl_difficulty}
+\end{figure}
+
+\subsection{Rezultate și Analiză Comparativă}
+S-au comparat performanțele pe setul de validare locală pentru cele trei scenarii antrenate timp de 40 de epoci:
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Strategie Antrenare} & \textbf{Val Acc / F1-Micro} & \textbf{F1-Macro Val} \\
+\midrule
+Baseline (fără CL) & 82.68\% & \textbf{0.7489} \\
+Strategia 1 (Pacing Static) & \textbf{83.13\%} & 0.7277 \\
+Strategia 2 (Self-Paced) & 82.73\% & 0.7228 \\
+\bottomrule
+\end{tabular}
+\caption{Comparație Curriculum Learning pe setul Moles}
+\label{tab:cl_results}
+\end{table}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.75\textwidth]{graphs/moles_cl_baseline_history.png}
+\\ \vspace{0.2cm}
+\includegraphics[width=0.75\textwidth]{graphs/moles_cl_strategy1_history.png}
+\caption{Istoricul antrenării pe Moles: Baseline (sus) vs. Strategia 1 Pacing Static (jos)}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.75\textwidth]{graphs/moles_cl_strategy2_history.png}
+\\ \vspace{0.2cm}
+\includegraphics[width=0.75\textwidth]{graphs/moles_cl_comparison.png}
+\caption{Istoricul antrenării pentru Strategia 2 Self-Paced (sus) și curbele F1-macro comparate pe validare (jos)}
+\label{fig:cl_curves}
+\end{figure}
+
+\subsection{Concluzii Studiu Curriculum Learning}
+Analiza curbelor și a metricilor relevă următoarele aspecte:
+\begin{itemize}
+    \item \textbf{Impactul dezechilibrului:} Pacing-ul static (Strategia 1) a crescut acuratețea globală la $83.13\%$, dar a redus F1-macro la $0.7277$ (de la $0.7489$). Acest lucru se datorează faptului că imaginile din clasa majoritară \texttt{nv} au un contrast mai mare (fiind considerate „ușoare”) și domină batch-urile inițiale, privând modelul de contactul timpuriu cu clasele rare.
+    \item \textbf{Limitarea Self-Paced:} Strategia 2 a redus F1-macro la $0.7228$. Selectarea dinamică a mostrelor cu cost mic a favorizat exclusiv clasa majoritară \texttt{nv}, împiedicând învățarea claselor rare în primele epoci.
+\end{itemize}
+Astfel, curriculum learning pe seturi dezechilibrate necesită eșantionare stratificată pentru a preveni dominanța clasei majoritare.
+
+\section{Modele Finale, Ensemble și Tehnica TTA}
+Pentru maximizarea performanței pe setul \texttt{Faces}, s-a antrenat arhitectura \texttt{ResNet-18} timp de 120 de epoci utilizând:
+\begin{itemize}
+    \item Dezghețarea tuturor celor 4 blocuri reziduale (\texttt{layer1}–\texttt{layer4}).
+    \item Cap de clasificare complex: \texttt{Linear(512)} $\rightarrow$ \texttt{BatchNorm1d} $\rightarrow$ \texttt{ReLU} $\rightarrow$ \texttt{Dropout(0.3)} $\rightarrow$ \texttt{Linear(256} $\rightarrow$ \texttt{7)}.
+    \item Rate de învățare diferențiate: $1e-4$ pe backbone și $1e-3$ pe clasificator, cu scheduler \texttt{CosineAnnealingLR}.
+    \item Augmentări complete (\texttt{all}) și antrenare cu trei inițializări (seeds) diferite.
+\end{itemize}
+
+\subsection{Configurația Finală și Rulările Multi-Seed}
+\begin{table}[h!]
+\centering
+\begin{tabular}{llccc}
+\toprule
+\textbf{Dataset} & \textbf{Model Rulat (120 epoci)} & \textbf{Val Acc / F1-Micro} & \textbf{F1-Macro Val} \\
+\midrule
+Faces & Rulare Standard & 82.04\% & \textbf{0.7408} \\
+Faces & Rulare Seed 42 & 82.04\% & 0.7382 \\
+Faces & Rulare Seed 123 & \textbf{82.47\%} & 0.7298 \\
+\bottomrule
+\end{tabular}
+\caption{Performanțele modelelor finale de 120 de epoci pe setul Faces}
+\end{table}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/faces_resnet18_aug-all_bnFalse_imb-weighted_ce_sched-cosine_ub4_complexhead_bb1e-04_ep120_history.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/faces_resnet18_aug-all_bnFalse_imb-weighted_ce_sched-cosine_ub4_complexhead_bb1e-04_ep120_seed42_history.png}
+\caption{Evoluție antrenare Faces: Rularea Standard (stânga) și Seed 42 (dreapta)}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.6\textwidth]{graphs/faces_resnet18_aug-all_bnFalse_imb-weighted_ce_sched-cosine_ub4_complexhead_bb1e-04_ep120_seed123_history.png}
+\caption{Evoluție antrenare Faces: Rularea Seed 123}
+\end{figure}
+
+\subsection{Test-Time Augmentation (TTA)}
+La inferență, s-a aplicat Test-Time Augmentation prin medierea logiților imaginii originale și ai versiunii sale reflectate orizontal (horizontal flip). Această tehnică reduce variabilitatea predicțiilor și îmbunătățește scorul F1-macro.
+
+\subsection{Medierea Logiților (Ensemble)}
+Pentru reducerea varianței, s-a realizat un ansamblu (ensemble) prin medierea aritmetică a logiților celor trei modele antrenate (Standard, Seed 42, Seed 123):
+\[
+\text{Logits}_{\text{Ensemble}} = \frac{\text{Logits}_{\text{Standard}} + \text{Logits}_{\text{Seed42}} + \text{Logits}_{\text{Seed123}}}{3}
+\]
+Această mediere a condus la o decizie stabilă și a permis depășirea pragului de performanță stabilit.
+
+\subsection{Matrice de Confuzie și Metrici Finale}
+Pentru ilustrarea performanței pe fiecare clasă, se prezintă matricele de confuzie obținute pe seturile de validare locală pentru cele mai bune configurații de pe ambele seturi de date:
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.48\textwidth]{graphs/moles_resnet18_aug-geometric_bnFalse_imb-sampler_nowarmup_ub2_lr0.001_ep50_confusion_matrix.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{graphs/faces_resnet18_aug-all_bnFalse_imb-weighted_ce_sched-cosine_ub4_complexhead_bb1e-04_ep120_confusion_matrix.png}
+\caption{Matricele de confuzie finale: Moles (stânga) și Faces (dreapta)}
+\label{fig:confusion_matrices}
+\end{figure}
+
+Pe setul \texttt{Moles}, utilizând \texttt{ResNet-18} (Scenariul 2, cu sampler, fără warmup), s-au obținut următoarele metrici finale de performanță:
+\begin{itemize}
+    \item \textbf{Acuratețe / F1-Micro:} 84.32\%
+    \item \textbf{F1-Macro:} 0.7267
+\end{itemize}
+Matricea de confuzie evidențiază o recunoaștere corectă a clasei majoritare \texttt{nv} (1124 din 1341 mostre), dar și o performanță ridicată pe clasele minoritare datorită utilizării samplerului echilibrat.
+
+Pe setul \texttt{Faces}, utilizând \texttt{ResNet-18} (120 de epoci, standard run), s-au obținut următoarele metrici finale de performanță:
+\begin{itemize}
+    \item \textbf{Acuratețe / F1-Micro:} 82.04\%
+    \item \textbf{F1-Macro:} 0.7408
+\end{itemize}
+Matricea de confuzie confirmă o generalizare echilibrată a emotiilor dificile (de exemplu, frica sau dezgustul), reducând semnificativ erorile pe clasele minoritare.
 
 \end{document}

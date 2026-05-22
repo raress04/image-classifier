@@ -14,3 +14,11 @@ __pycache__/
 # Logs and checkpoints
 runs/
 checkpoints/
+
+# Scripts folder
+scripts/
+
+# Temporary files and results
+*.json
+scratch/
+submissions/
