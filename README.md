@@ -4,9 +4,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Course:** Artificial Intelligence (IA) — Assignment 2  
-**Institution:** Faculty of Automatic Control and Computers, National University of Science and Technology POLITEHNICA Bucharest (UPB)  
-**Author:** Balcan Rareș-Ștefan (Group 332CB)
+**Author:** Balcan Rareș-Ștefan
 
 ---
 
@@ -395,6 +393,3 @@ python scripts/submit_ensemble_kaggle.py \
 ```
 
 ---
-
-## 📜 Academic Integrity & License
-This project was developed for academic research and educational evaluation in Artificial Intelligence at UPB. All source code is released under the [MIT License](LICENSE).
